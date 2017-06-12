@@ -12,6 +12,7 @@ from fast_rcnn.config import cfg
 from fast_rcnn.bbox_transform import bbox_transform
 from utils.cython_bbox import bbox_overlaps
 import PIL
+import time
 
 def prepare_roidb(imdb):
     """Enrich the imdb's roidb by adding some derived quantities that
@@ -22,6 +23,7 @@ def prepare_roidb(imdb):
     """
     sizes = [PIL.Image.open(imdb.image_path_at(i)).size
              for i in xrange(imdb.num_images)]
+
     roidb = imdb.roidb
     for i in xrange(len(imdb.image_index)):
         roidb[i]['image'] = imdb.image_path_at(i)
@@ -68,8 +70,8 @@ def add_bbox_regression_targets(roidb):
         # Compute values needed for means and stds
         # var(x) = E(x^2) - E(x)^2
         class_counts = np.zeros((num_classes, 1)) + cfg.EPS
-        sums = np.zeros((num_classes, 4))
-        squared_sums = np.zeros((num_classes, 4))
+        sums = np.zeros((num_classes, 5))
+        squared_sums = np.zeros((num_classes, 5))
         for im_i in xrange(num_images):
             targets = roidb[im_i]['bbox_targets']
             for cls in xrange(1, num_classes):
@@ -127,7 +129,7 @@ def _compute_targets(rois, overlaps, labels):
     gt_rois = rois[gt_inds[gt_assignment], :]
     ex_rois = rois[ex_inds, :]
 
-    targets = np.zeros((rois.shape[0], 5), dtype=np.float32)
+    targets = np.zeros((rois.shape[0], 6), dtype=np.float32)
     targets[ex_inds, 0] = labels[ex_inds]
     targets[ex_inds, 1:] = bbox_transform(ex_rois, gt_rois)
     return targets

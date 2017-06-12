@@ -183,6 +183,7 @@ class railway(imdb):
         format.
         """
         filename = os.path.join(self._data_path, 'Annotations', index + '.xml')
+        print 'filename',filename
         tree = ET.parse(filename)
         objs = tree.findall('object')
         if not self.config['use_diff']:
@@ -195,7 +196,7 @@ class railway(imdb):
             objs = non_diff_objs
         num_objs = len(objs)
 
-        boxes = np.zeros((num_objs, 4), dtype=np.uint16)
+        boxes = np.zeros((num_objs, 5), dtype=np.uint16)
         gt_classes = np.zeros((num_objs), dtype=np.int32)
         overlaps = np.zeros((num_objs, self.num_classes), dtype=np.float32)
         # "Seg" area for pascal is just the box area
@@ -205,15 +206,20 @@ class railway(imdb):
         for ix, obj in enumerate(objs):
             bbox = obj.find('bndbox')
             # Make pixel indexes 0-based
-            x1 = float(bbox.find('xmin').text) - 1
-            y1 = float(bbox.find('ymin').text) - 1
-            x2 = float(bbox.find('xmax').text) - 1
-            y2 = float(bbox.find('ymax').text) - 1
+            x = float(bbox.find('center_x').text) - 1
+            y = float(bbox.find('center_y').text) - 1
+            roi_width = float(bbox.find('roi_width').text) - 1
+            roi_height = float(bbox.find('roi_height').text) - 1
+            theta = float(bbox.find('theta').text) 
             cls = self._class_to_ind[obj.find('name').text.lower().strip()]
-            boxes[ix, :] = [x1, y1, x2, y2]
+
+            print(x,y,roi_width,roi_height, cls)
+
+            boxes[ix, :] = [x, y, roi_width, roi_height, theta]
             gt_classes[ix] = cls
             overlaps[ix, cls] = 1.0
-            seg_areas[ix] = (x2 - x1 + 1) * (y2 - y1 + 1)
+            # seg_areas[ix] = (x2 - x1 + 1) * (y2 - y1 + 1)
+            seg_areas[ix] = roi_width * roi_height
 
         overlaps = scipy.sparse.csr_matrix(overlaps)
 

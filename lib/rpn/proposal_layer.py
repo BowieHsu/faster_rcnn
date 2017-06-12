@@ -87,9 +87,14 @@ class ProposalLayer(caffe.Layer):
         shift_x = np.arange(0, width) * self._feat_stride
         shift_y = np.arange(0, height) * self._feat_stride
         shift_x, shift_y = np.meshgrid(shift_x, shift_y)
-        shifts = np.vstack((shift_x.ravel(), shift_y.ravel(),
-                            shift_x.ravel(), shift_y.ravel())).transpose()
+        # shifts = np.vstack((shift_x.ravel(), shift_y.ravel(),
+                            # shift_x.ravel(), shift_y.ravel())).transpose()
 
+        shift_w = np.zeros(shift_x.shape)
+        shift_h = np.zeros(shift_x.shape)
+        shift_theta = np.zeros(shift_x.shape)
+        shifts = np.vstack((shift_x.ravel(), shift_y.ravel(),
+                            shift_w.ravel(), shift_h.ravel(), shift_theta.ravel())).transpose()
         # Enumerate all shifted anchors:
         #
         # add A anchors (1, A, 4) to
@@ -98,9 +103,9 @@ class ProposalLayer(caffe.Layer):
         # reshape to (K*A, 4) shifted anchors
         A = self._num_anchors
         K = shifts.shape[0]
-        anchors = self._anchors.reshape((1, A, 4)) + \
-                  shifts.reshape((1, K, 4)).transpose((1, 0, 2))
-        anchors = anchors.reshape((K * A, 4))
+        anchors = self._anchors.reshape((1, A, 5)) + \
+                  shifts.reshape((1, K, 5)).transpose((1, 0, 2))
+        anchors = anchors.reshape((K * A, 5))
 
         # Transpose and reshape predicted bbox transformations to get them
         # into the same order as the anchors:

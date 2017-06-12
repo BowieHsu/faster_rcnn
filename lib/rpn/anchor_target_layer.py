@@ -14,6 +14,7 @@ import numpy.random as npr
 from generate_anchors import generate_anchors
 from utils.cython_bbox import bbox_overlaps
 from fast_rcnn.bbox_transform import bbox_transform
+import time
 
 #DEBUG = False
 DEBUG = True
@@ -58,11 +59,11 @@ class AnchorTargetLayer(caffe.Layer):
         # labels
         top[0].reshape(1, 1, A * height, width)
         # bbox_targets
-        top[1].reshape(1, A * 4, height, width)
+        top[1].reshape(1, A * 5, height, width)
         # bbox_inside_weights
-        top[2].reshape(1, A * 4, height, width)
+        top[2].reshape(1, A * 5, height, width)
         # bbox_outside_weights
-        top[3].reshape(1, A * 4, height, width)
+        top[3].reshape(1, A * 5, height, width)
 
     def forward(self, bottom, top):
         # Algorithm:
@@ -95,8 +96,15 @@ class AnchorTargetLayer(caffe.Layer):
         shift_x = np.arange(0, width) * self._feat_stride
         shift_y = np.arange(0, height) * self._feat_stride
         shift_x, shift_y = np.meshgrid(shift_x, shift_y)
+        # shifts = np.vstack((shift_x.ravel(), shift_y.ravel(),
+                            # shift_x.ravel(), shift_y.ravel())).transpose()
+
+        # produce new kind of shifts with type (x,y,w,h,theta)
+        shift_w = np.zeros(shift_x.shape)
+        shift_h = np.zeros(shift_x.shape)
+        shift_theta = np.zeros(shift_x.shape)
         shifts = np.vstack((shift_x.ravel(), shift_y.ravel(),
-                            shift_x.ravel(), shift_y.ravel())).transpose()
+                            shift_w.ravel(), shift_h.ravel(), shift_theta.ravel())).transpose()
 
         if DEBUG:
             print 'shift_x'
@@ -111,17 +119,34 @@ class AnchorTargetLayer(caffe.Layer):
         # reshape to (K*A, 4) shifted anchors
         A = self._num_anchors
         K = shifts.shape[0]
-        all_anchors = (self._anchors.reshape((1, A, 4)) +
-                       shifts.reshape((1, K, 4)).transpose((1, 0, 2)))
-        all_anchors = all_anchors.reshape((K * A, 4))
+
+        # print 'A'
+        # print A
+        # print 'K'
+        # print K
+        # print self._anchors.reshape((1, A, 5))
+        # print shifts.reshape((1, K, 5))
+
+        all_anchors = (self._anchors.reshape((1, A, 5)) +
+                       shifts.reshape((1, K, 5)).transpose((1, 0, 2)))
+        all_anchors = all_anchors.reshape((K * A, 5))
         total_anchors = int(K * A)
 
+        print all_anchors
+
         # only keep anchors inside the image
+        # inds_inside = np.where(
+            # (all_anchors[:, 0] >= -self._allowed_border) &
+            # (all_anchors[:, 1] >= -self._allowed_border) &
+            # (all_anchors[:, 2] < im_info[1] + self._allowed_border) &  # width
+            # (all_anchors[:, 3] < im_info[0] + self._allowed_border)    # height
+        # )[0]
+
         inds_inside = np.where(
-            (all_anchors[:, 0] >= -self._allowed_border) &
-            (all_anchors[:, 1] >= -self._allowed_border) &
-            (all_anchors[:, 2] < im_info[1] + self._allowed_border) &  # width
-            (all_anchors[:, 3] < im_info[0] + self._allowed_border)    # height
+                (all_anchors[:, 0] - all_anchors[:,2]/2 >= -self._allowed_border) &
+                (all_anchors[:, 1] - all_anchors[:,3]/2 >= -self._allowed_border) &
+                (all_anchors[:, 0] + all_anchors[:,2]/2 < im_info[1] + self._allowed_border) &  # width
+                (all_anchors[:, 1] + all_anchors[:,2]/2 < im_info[0] + self._allowed_border)    # height
         )[0]
 
         if DEBUG:
@@ -180,14 +205,18 @@ class AnchorTargetLayer(caffe.Layer):
             labels[disable_inds] = -1
             #print "was %s inds, disabling %s, now %s inds" % (
                 #len(bg_inds), len(disable_inds), np.sum(labels == 0))
-
-        bbox_targets = np.zeros((len(inds_inside), 4), dtype=np.float32)
+        print('anchor_target_layer inds_inside',len(inds_inside))
+        # time.sleep(20)
+        bbox_targets = np.zeros((len(inds_inside), 5), dtype=np.float32)
         bbox_targets = _compute_targets(anchors, gt_boxes[argmax_overlaps, :])
 
-        bbox_inside_weights = np.zeros((len(inds_inside), 4), dtype=np.float32)
+        bbox_inside_weights = np.zeros((len(inds_inside), 5), dtype=np.float32)
+
+        print(cfg.TRAIN.RPN_BBOX_INSIDE_WEIGHTS)
+
         bbox_inside_weights[labels == 1, :] = np.array(cfg.TRAIN.RPN_BBOX_INSIDE_WEIGHTS)
 
-        bbox_outside_weights = np.zeros((len(inds_inside), 4), dtype=np.float32)
+        bbox_outside_weights = np.zeros((len(inds_inside), 5), dtype=np.float32)
 
         if DEBUG:
             print 'bbox_inside_weights'
@@ -198,8 +227,8 @@ class AnchorTargetLayer(caffe.Layer):
         if cfg.TRAIN.RPN_POSITIVE_WEIGHT < 0:
             # uniform weighting of examples (given non-uniform sampling)
             num_examples = np.sum(labels >= 0)
-            positive_weights = np.ones((1, 4)) * 1.0 / num_examples
-            negative_weights = np.ones((1, 4)) * 1.0 / num_examples
+            positive_weights = np.ones((1, 5)) * 1.0 / num_examples
+            negative_weights = np.ones((1, 5)) * 1.0 / num_examples
         else:
             assert ((cfg.TRAIN.RPN_POSITIVE_WEIGHT > 0) &
                     (cfg.TRAIN.RPN_POSITIVE_WEIGHT < 1))
@@ -216,6 +245,7 @@ class AnchorTargetLayer(caffe.Layer):
             self._counts += np.sum(labels == 1)
             means = self._sums / self._counts
             stds = np.sqrt(self._squared_sums / self._counts - means ** 2)
+            print 'self._counts', self._counts, 'self._sums', self._sums
             print 'means:'
             print means
             print 'stdevs:'
@@ -245,13 +275,13 @@ class AnchorTargetLayer(caffe.Layer):
 
         # bbox_targets
         bbox_targets = bbox_targets \
-            .reshape((1, height, width, A * 4)).transpose(0, 3, 1, 2)
+            .reshape((1, height, width, A * 5)).transpose(0, 3, 1, 2)
         top[1].reshape(*bbox_targets.shape)
         top[1].data[...] = bbox_targets
 
         # bbox_inside_weights
         bbox_inside_weights = bbox_inside_weights \
-            .reshape((1, height, width, A * 4)).transpose(0, 3, 1, 2)
+            .reshape((1, height, width, A * 5)).transpose(0, 3, 1, 2)
         assert bbox_inside_weights.shape[2] == height
         assert bbox_inside_weights.shape[3] == width
         top[2].reshape(*bbox_inside_weights.shape)
@@ -259,7 +289,7 @@ class AnchorTargetLayer(caffe.Layer):
 
         # bbox_outside_weights
         bbox_outside_weights = bbox_outside_weights \
-            .reshape((1, height, width, A * 4)).transpose(0, 3, 1, 2)
+            .reshape((1, height, width, A * 5)).transpose(0, 3, 1, 2)
         assert bbox_outside_weights.shape[2] == height
         assert bbox_outside_weights.shape[3] == width
         top[3].reshape(*bbox_outside_weights.shape)
@@ -292,7 +322,9 @@ def _compute_targets(ex_rois, gt_rois):
     """Compute bounding-box regression targets for an image."""
 
     assert ex_rois.shape[0] == gt_rois.shape[0]
-    assert ex_rois.shape[1] == 4
-    assert gt_rois.shape[1] == 5
+    assert ex_rois.shape[1] == 5
+    assert gt_rois.shape[1] == 6
+    print gt_rois.shape[1]
 
-    return bbox_transform(ex_rois, gt_rois[:, :4]).astype(np.float32, copy=False)
+
+    return bbox_transform(ex_rois, gt_rois[:, :5]).astype(np.float32, copy=False)

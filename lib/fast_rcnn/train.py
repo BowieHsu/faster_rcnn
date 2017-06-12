@@ -13,6 +13,7 @@ import roi_data_layer.roidb as rdl_roidb
 from utils.timer import Timer
 import numpy as np
 import os
+import time
 
 from caffe.proto import caffe_pb2
 import google.protobuf as pb2
@@ -128,7 +129,9 @@ def get_training_roidb(imdb):
     print 'Preparing training data...'
     rdl_roidb.prepare_roidb(imdb)
     print 'done'
-
+    
+    print imdb.roidb
+    # time.sleep(10)
     return imdb.roidb
 
 def filter_roidb(roidb):
