@@ -10,7 +10,7 @@ import numpy as np
 import yaml
 from fast_rcnn.config import cfg
 from generate_anchors import generate_anchors
-from fast_rcnn.bbox_transform import bbox_transform_inv, clip_boxes
+from fast_rcnn.bbox_transform import bbox_transform_inv, clip_boxes,orient_bbox_transform_inv
 from fast_rcnn.nms_wrapper import nms
 
 DEBUG = False
@@ -114,7 +114,13 @@ class ProposalLayer(caffe.Layer):
         # transpose to (1, H, W, 4 * A)
         # reshape to (1 * H * W * A, 4) where rows are ordered by (h, w, a)
         # in slowest to fastest order
-        bbox_deltas = bbox_deltas.transpose((0, 2, 3, 1)).reshape((-1, 4))
+        print 'bbox_deltas'
+        print bbox_deltas
+
+        bbox_deltas = bbox_deltas.transpose((0, 2, 3, 1)).reshape((-1, 5))
+
+        print 'fucked bbox_deltas'
+        print bbox_deltas
 
         # Same story for the scores:
         #
@@ -124,7 +130,8 @@ class ProposalLayer(caffe.Layer):
         scores = scores.transpose((0, 2, 3, 1)).reshape((-1, 1))
 
         # Convert anchors into proposals via bbox transformations
-        proposals = bbox_transform_inv(anchors, bbox_deltas)
+        # proposals = bbox_transform_inv(anchors, bbox_deltas)
+        proposals = orient_bbox_transform_inv(anchors, bbox_deltas)
 
         # 2. clip predicted boxes to image
         proposals = clip_boxes(proposals, im_info[:2])

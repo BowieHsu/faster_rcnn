@@ -137,8 +137,8 @@ def _compute_targets(ex_rois, gt_rois, labels):
     """Compute bounding-box regression targets for an image."""
 
     assert ex_rois.shape[0] == gt_rois.shape[0]
-    assert ex_rois.shape[1] == 4
-    assert gt_rois.shape[1] == 4
+    assert ex_rois.shape[1] == 5
+    assert gt_rois.shape[1] == 5
 
     targets = bbox_transform(ex_rois, gt_rois)
     if cfg.TRAIN.BBOX_NORMALIZE_TARGETS_PRECOMPUTED:
@@ -189,7 +189,7 @@ def _sample_rois(all_rois, gt_boxes, fg_rois_per_image, rois_per_image, num_clas
     rois = all_rois[keep_inds]
 
     bbox_target_data = _compute_targets(
-        rois[:, 1:5], gt_boxes[gt_assignment[keep_inds], :4], labels)
+        rois[:, 1:6], gt_boxes[gt_assignment[keep_inds], :5], labels)
 
     bbox_targets, bbox_inside_weights = \
         _get_bbox_regression_labels(bbox_target_data, num_classes)
