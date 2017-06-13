@@ -53,7 +53,7 @@ import cv2
 
 #    return anchors
 
-PIE_180 = 3.1415926535857932384626 / 180.0
+PIE_180 = 3.1415926535 / 180.0
 
 def generate_anchors(base_size=16, ratios=[0.5, 1, 2],
                      scales=2**np.arange(3, 6),
@@ -69,7 +69,7 @@ def generate_anchors(base_size=16, ratios=[0.5, 1, 2],
                          for i in xrange(ratio_anchors.shape[0])])
     anchors = np.vstack([_angle_enum(anchors[i, :], angles)
                          for i in xrange(anchors.shape[0])])
-    print(anchors.shape)
+    # print(anchors.shape)
     return anchors
 
 def _whctrs(anchor):
@@ -104,14 +104,14 @@ def _ratio_enum(anchor, ratios):
 
     w, h, x_ctr, y_ctr = _whctrs(anchor)
 
-    print(w, h, x_ctr, y_ctr)
+    # print(w, h, x_ctr, y_ctr)
 
     size = w * h
     size_ratios = size / ratios
     ws = np.round(np.sqrt(size_ratios))
     hs = np.round(ws * ratios)
     anchors = _mkanchors(ws, hs, x_ctr, y_ctr)
-    print('ws', ws, 'hs', hs, 'anchors', anchors)
+    # print('ws', ws, 'hs', hs, 'anchors', anchors)
     return anchors
 
 def _scale_enum(anchor, scales):

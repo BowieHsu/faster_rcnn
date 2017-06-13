@@ -16,8 +16,8 @@ from utils.cython_bbox import bbox_overlaps
 from fast_rcnn.bbox_transform import bbox_transform
 import time
 
-#DEBUG = False
-DEBUG = True
+DEBUG = False
+#DEBUG = True
 
 class AnchorTargetLayer(caffe.Layer):
     """
@@ -132,7 +132,7 @@ class AnchorTargetLayer(caffe.Layer):
         all_anchors = all_anchors.reshape((K * A, 5))
         total_anchors = int(K * A)
 
-        print all_anchors
+        # print all_anchors
 
         # only keep anchors inside the image
         # inds_inside = np.where(
@@ -205,14 +205,14 @@ class AnchorTargetLayer(caffe.Layer):
             labels[disable_inds] = -1
             #print "was %s inds, disabling %s, now %s inds" % (
                 #len(bg_inds), len(disable_inds), np.sum(labels == 0))
-        print('anchor_target_layer inds_inside',len(inds_inside))
+        # print('anchor_target_layer inds_inside',len(inds_inside))
         # time.sleep(20)
         bbox_targets = np.zeros((len(inds_inside), 5), dtype=np.float32)
         bbox_targets = _compute_targets(anchors, gt_boxes[argmax_overlaps, :])
 
         bbox_inside_weights = np.zeros((len(inds_inside), 5), dtype=np.float32)
 
-        print(cfg.TRAIN.RPN_BBOX_INSIDE_WEIGHTS)
+        # print(cfg.TRAIN.RPN_BBOX_INSIDE_WEIGHTS)
 
         bbox_inside_weights[labels == 1, :] = np.array(cfg.TRAIN.RPN_BBOX_INSIDE_WEIGHTS)
 
@@ -324,7 +324,7 @@ def _compute_targets(ex_rois, gt_rois):
     assert ex_rois.shape[0] == gt_rois.shape[0]
     assert ex_rois.shape[1] == 5
     assert gt_rois.shape[1] == 6
-    print gt_rois.shape[1]
+    # print gt_rois.shape[1]
 
 
     return bbox_transform(ex_rois, gt_rois[:, :5]).astype(np.float32, copy=False)

@@ -32,9 +32,9 @@ class RoIDataLayer(caffe.Layer):
             inds = np.hstack((
                 np.random.permutation(horz_inds),
                 np.random.permutation(vert_inds)))
-            print('layer_py_inds',inds)
+            # print('layer_py_inds',inds)
             inds = np.reshape(inds, (-1, 2))
-            print('layer_py_inds',inds)
+            # print('layer_py_inds',inds)
             row_perm = np.random.permutation(np.arange(inds.shape[0]))
             inds = np.reshape(inds[row_perm, :], (-1,))
             self._perm = inds
@@ -58,15 +58,14 @@ class RoIDataLayer(caffe.Layer):
         separate process and made available through self._blob_queue.
         """
 
-        print 'USE_PREFETCH',cfg.TRAIN.USE_PREFETCH
+        # print 'USE_PREFETCH',cfg.TRAIN.USE_PREFETCH
         if cfg.TRAIN.USE_PREFETCH:
             return self._blob_queue.get()
         else:
             db_inds = self._get_next_minibatch_inds()
-            print('dddddind',db_inds)
+            # print('dddddind',db_inds)
             minibatch_db = [self._roidb[i] for i in db_inds]
-            for i in db_inds:
-                print(self._roidb[i])
+                # print(self._roidb[i])
             return get_minibatch(minibatch_db, self._num_classes)
 
     def set_roidb(self, roidb):
@@ -143,7 +142,7 @@ class RoIDataLayer(caffe.Layer):
                 self._name_to_top_map['bbox_outside_weights'] = idx
                 idx += 1
 
-        print 'RoiDataLayer: name_to_top:', self._name_to_top_map
+        # print 'RoiDataLayer: name_to_top:', self._name_to_top_map
         assert len(top) == len(self._name_to_top_map)
 
     def forward(self, bottom, top):
@@ -153,9 +152,9 @@ class RoIDataLayer(caffe.Layer):
         i = 0
         for blob_name, blob in blobs.iteritems():
 
-            print i
-            print 'blob_name',blob_name
-            print 'blob',blob
+            # print i
+            # print 'blob_name',blob_name
+            # print 'blob',blob
             i += 1
             
             top_ind = self._name_to_top_map[blob_name]

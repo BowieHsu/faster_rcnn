@@ -40,8 +40,8 @@ def get_minibatch(roidb, num_classes):
         gt_boxes[:, 0:4] = roidb[0]['boxes'][gt_inds, 0:4] * im_scales[0]
         gt_boxes[:, 4] = roidb[0]['boxes'][gt_inds, 4] 
         gt_boxes[:, 5] = roidb[0]['gt_classes'][gt_inds]
-        print('roidb[0]', roidb[0])
-        print('gt_boxes', gt_boxes)
+        # print('roidb[0]', roidb[0])
+        # print('gt_boxes', gt_boxes)
         blobs['gt_boxes'] = gt_boxes
         blobs['im_info'] = np.array(
             [[im_blob.shape[2], im_blob.shape[3], im_scales[0]]],
@@ -194,7 +194,7 @@ def _vis_minibatch(im_blob, rois_blob, labels_blob, overlaps):
         im = im.astype(np.uint8)
         cls = labels_blob[i]
         plt.imshow(im)
-        print 'class: ', cls, ' overlap: ', overlaps[i]
+        # print 'class: ', cls, ' overlap: ', overlaps[i]
         plt.gca().add_patch(
             plt.Rectangle((roi[0], roi[1]), roi[2] - roi[0],
                           roi[3] - roi[1], fill=False,
