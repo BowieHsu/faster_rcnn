@@ -59,7 +59,7 @@ __C.TRAIN.BG_THRESH_LO = 0.1
 
 # Use horizontally-flipped images during training?
 # __C.TRAIN.USE_FLIPPED = True
-__C.TRAIN.USE_FLIPPED = False 
+__C.TRAIN.USE_FLIPPED = False
 
 # Train bounding-box regressors
 __C.TRAIN.BBOX_REG = True
@@ -95,7 +95,8 @@ __C.TRAIN.PROPOSAL_METHOD = 'selective_search'
 # Make minibatches from images that have similar aspect ratios (i.e. both
 # tall and thin or both short and wide) in order to avoid wasting computation
 # on zero-padding.
-__C.TRAIN.ASPECT_GROUPING = True
+# __C.TRAIN.ASPECT_GROUPING = True
+__C.TRAIN.ASPECT_GROUPING = False
 
 # Use RPN to detect objects
 __C.TRAIN.HAS_RPN = False

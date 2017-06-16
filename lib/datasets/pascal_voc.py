@@ -28,7 +28,7 @@ class pascal_voc(imdb):
                             else devkit_path
         self._data_path = os.path.join(self._devkit_path, 'VOC' + self._year)
         self._classes = ('__background__', # always index 0
-                         '0', '1', '2', '3','4', '5', '6', '7', '8', '9', 'q', 'z', 'y', 'c')
+                         'gongjian')
         # self._classes = ('__background__', # always index 0
                          # 'shijin','chunsheng','weiquan','cici')
         # self._classes = ('__background__', # always index 0
@@ -204,7 +204,7 @@ class pascal_voc(imdb):
             objs = non_diff_objs
         num_objs = len(objs)
 
-        boxes = np.zeros((num_objs, 4), dtype=np.uint16)
+        boxes = np.zeros((num_objs, 5), dtype=np.uint16)
         gt_classes = np.zeros((num_objs), dtype=np.int32)
         overlaps = np.zeros((num_objs, self.num_classes), dtype=np.float32)
         # "Seg" area for pascal is just the box area
@@ -214,15 +214,16 @@ class pascal_voc(imdb):
         for ix, obj in enumerate(objs):
             bbox = obj.find('bndbox')
             # Make pixel indexes 0-based
-            x1 = float(bbox.find('xmin').text) - 1
-            y1 = float(bbox.find('ymin').text) - 1
-            x2 = float(bbox.find('xmax').text) - 1
-            y2 = float(bbox.find('ymax').text) - 1
+            x = float(bbox.find('center_x').text) - 1
+            y = float(bbox.find('center_y').text) - 1
+            roi_width = float(bbox.find('label_width').text) - 1
+            roi_height = float(bbox.find('label_height').text) - 1
+            theta = float(bbox.find('angle').text)
             cls = self._class_to_ind[obj.find('name').text.lower().strip()]
-            boxes[ix, :] = [x1, y1, x2, y2]
+            boxes[ix, :] = [x, y, roi_width, roi_height, theta]
             gt_classes[ix] = cls
             overlaps[ix, cls] = 1.0
-            seg_areas[ix] = (x2 - x1 + 1) * (y2 - y1 + 1)
+            seg_areas[ix] = roi_width * roi_height
 
         overlaps = scipy.sparse.csr_matrix(overlaps)
 
