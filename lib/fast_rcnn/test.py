@@ -8,7 +8,7 @@
 """Test a Fast R-CNN network on an imdb (image database)."""
 
 from fast_rcnn.config import cfg, get_output_dir
-from fast_rcnn.bbox_transform import clip_boxes, bbox_transform_inv
+from fast_rcnn.bbox_transform import clip_boxes, bbox_transform_inv,orient_bbox_transform_inv
 import argparse
 from utils.timer import Timer
 import numpy as np
@@ -18,6 +18,8 @@ from fast_rcnn.nms_wrapper import nms
 import cPickle
 from utils.blob import im_list_to_blob
 import os
+import time
+
 
 def _get_image_blob(im):
     """Converts an image into a network input.
@@ -56,18 +58,19 @@ def _get_image_blob(im):
         print('im_scale', im_scale)
         print('target_size', target_size)
         # print('image save successed!')
+
         im_scale_factors.append(im_scale)
+        print('im_scale_factors:',im_scale_factors)
+
         processed_ims.append(im)
 
     # Create a blob to hold the input images
     blob = im_list_to_blob(processed_ims)
+    #print('blob',blob)
 
     '''
     show the blob imformation
     '''
-
-    # print('blob:',blob)
-
     return blob, np.array(im_scale_factors)
 
 def _get_rois_blob(im_rois, im_scale_factors):
@@ -80,7 +83,13 @@ def _get_rois_blob(im_rois, im_scale_factors):
     Returns:
         blob (ndarray): R x 5 matrix of RoIs in the image pyramid
     """
+    print('im_rois:',im_rois)
+
     rois, levels = _project_im_rois(im_rois, im_scale_factors)
+
+    print('_project_im_rois sucess!')
+    print('rois:',rois,'levels:',levels)
+
     rois_blob = np.hstack((levels, rois))
     return rois_blob.astype(np.float32, copy=False)
 
@@ -95,7 +104,13 @@ def _project_im_rois(im_rois, scales):
         rois (ndarray): R x 4 matrix of projected RoI coordinates
         levels (list): image pyramid levels used by each projected RoI
     """
+    print('This is _project_im_rois!')
+    print('im_rois:',im_rois)
+
     im_rois = im_rois.astype(np.float, copy=False)
+
+    print('as type sucess!')
+
 
     if len(scales) > 1:
         widths = im_rois[:, 2] - im_rois[:, 0] + 1
@@ -116,6 +131,9 @@ def _get_blobs(im, rois):
     """Convert an image and RoIs within that image into network inputs."""
     blobs = {'data' : None, 'rois' : None}
     blobs['data'], im_scale_factors = _get_image_blob(im)
+    print('_get_image_blob sucess!')
+    #print('blobs:',blobs['data'],'im_scale_factors:',im_scale_factors)
+    print(not cfg.TEST.HAS_RPN)
     if not cfg.TEST.HAS_RPN:
         blobs['rois'] = _get_rois_blob(rois, im_scale_factors)
     return blobs, im_scale_factors
@@ -133,13 +151,18 @@ def im_detect(net, im, boxes=None):
             background as object category 0)
         boxes (ndarray): R x (4*K) array of predicted bounding boxes
     """
+    print('im_detect begin')
+    cv2.imwrite('./1.jpg',im)
+    print('boxes',boxes)
     blobs, im_scales = _get_blobs(im, boxes)
+    cv2.imwrite('./2.jpg',im)
 
     # When mapping from image ROIs to feature map ROIs, there's some aliasing
     # (some distinct image ROIs get mapped to the same feature ROI).
     # Here, we identify duplicate feature ROIs, so we only compute features
     # on the unique subset.
     if cfg.DEDUP_BOXES > 0 and not cfg.TEST.HAS_RPN:
+        print('DEDUP_BOXES')
         v = np.array([1, 1e3, 1e6, 1e9, 1e12])
         hashes = np.round(blobs['rois'] * cfg.DEDUP_BOXES).dot(v)
         _, index, inv_index = np.unique(hashes, return_index=True,
@@ -155,6 +178,7 @@ def im_detect(net, im, boxes=None):
 
     # reshape network inputs
     net.blobs['data'].reshape(*(blobs['data'].shape))
+    print(net.blobs['data'].shape)
 
     # print('blob_data_shape',blobs['data'].shape)
     if cfg.TEST.HAS_RPN:
@@ -174,7 +198,16 @@ def im_detect(net, im, boxes=None):
         assert len(im_scales) == 1, "Only single-image batch implemented"
         rois = net.blobs['rois'].data.copy()
         # unscale back to raw image space
-        boxes = rois[:, 1:5] / im_scales[0]
+        boxes = rois[:,1:6]
+        boxes[:,0:4] = boxes[:,0:4] / im_scales[0]
+        #boxes[:, 1:5] = boxes[:, 1:5] / im_scales[0]
+
+        print ('boxes', boxes)
+        print ('boxes_shape', boxes.shape)
+
+        print ('rois', rois)
+        print ('rois_shape', rois.shape)
+        #time.sleep(10)
 
     if cfg.TEST.SVM:
         # use the raw scores before softmax under the assumption they
@@ -182,16 +215,18 @@ def im_detect(net, im, boxes=None):
         scores = net.blobs['cls_score'].data
     else:
         # use softmax estimated probabilities
-        scores = blobs_out['cls_prob']
+        # scores = blobs_out['cls_prob']
+        #scores = net.blobs['rpn_cls_prob'].data
+        scores = net.blobs['scores'].data.copy()
 
     if cfg.TEST.BBOX_REG:
         # Apply bounding-box regression deltas
-        box_deltas = blobs_out['bbox_pred']
-        pred_boxes = bbox_transform_inv(boxes, box_deltas)
-        pred_boxes = clip_boxes(pred_boxes, im.shape)
+        #box_deltas = net.blobs['rpn_bbox_pred'].data
+        #pred_boxes = orient_bbox_transform_inv(boxes, box_deltas)
+        #pred_boxes = clip_boxes(pred_boxes, im.shape)
 
-        # print("pred_boxes")
-        # print(pred_boxes)
+        pred_boxes = boxes
+
     else:
         # Simply repeat the boxes, once for each class
         pred_boxes = np.tile(boxes, (1, scores.shape[1]))

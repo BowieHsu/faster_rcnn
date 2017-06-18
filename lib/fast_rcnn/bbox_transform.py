@@ -8,9 +8,10 @@
 import numpy as np
 
 DEBUG = False
+#DEBUG = True
 def bbox_transform(ex_rois, gt_rois):
     ex_widths = ex_rois[:, 2]
-    ex_heights = ex_rois[:, 3] 
+    ex_heights = ex_rois[:, 3]
     ex_ctr_x = ex_rois[:, 0]
     ex_ctr_y = ex_rois[:, 1]
     ex_theta = ex_rois[:,4]
@@ -25,12 +26,12 @@ def bbox_transform(ex_rois, gt_rois):
     targets_dy = (gt_ctr_y - ex_ctr_y) / ex_heights
     targets_dw = np.log(gt_widths / ex_widths)
     targets_dh = np.log(gt_heights / ex_heights)
-    
+
     targets_theta  = gt_theta - ex_theta/3.1415926535*180
-  
+
     if DEBUG:
-        print ex_rois 
-        print gt_rois 
+        print ex_rois
+        print gt_rois
         print('gt_theta')
         print(gt_theta)
         print('ex_theta')
@@ -39,13 +40,14 @@ def bbox_transform(ex_rois, gt_rois):
         print(targets_theta)
 
     for i in range(targets_theta.shape[0]):
-        if(targets_theta[i] < -45):
-            while (targets_theta[i] < -45):
-                targets_theta[i] += 180
-        elif(targets_theta[i] > 135):
-            while(targets_theta[i] > 135):
-                targets_theta[i] -= 180
-        targets_theta[i] = targets_theta[i]/180 * 3.1415926535
+        #if(targets_theta[i] < -45):
+        #    while (targets_theta[i] < -45):
+        #        targets_theta[i] += 180
+        #elif(targets_theta[i] > 135):
+        #    while(targets_theta[i] > 135):
+        #        targets_theta[i] -= 180
+        #targets_theta[i] = targets_theta[i]/180 * 3.1415926535
+        targets_theta[i] = 0
 
     targets = np.vstack(
         (targets_dx, targets_dy, targets_dw, targets_dh, targets_theta)).transpose()
@@ -58,23 +60,27 @@ def orient_bbox_transform_inv(boxes, deltas):
     boxes = boxes.astype(deltas.dtype, copy=False)
 
     widths = boxes[:, 2]
-    heights = boxes[:, 3] 
+    heights = boxes[:, 3]
     ctr_x = boxes[:, 0]
-    ctr_y = boxes[:, 1] 
+    ctr_y = boxes[:, 1]
 
     dx = deltas[:, 0::5]
     dy = deltas[:, 1::5]
     dw = deltas[:, 2::5]
     dh = deltas[:, 3::5]
+    theta = deltas[:,4::5]
 
     if DEBUG:
         print 'ssss',deltas.shape
         print dx.shape,dy.shape,dw.shape,dh.shape
-    
+        print (widths, ctr_x)
+        print ('widths_shape',widths.shape)
+        print boxes.shape
     pred_ctr_x = dx * widths[:, np.newaxis] + ctr_x[:, np.newaxis]
     pred_ctr_y = dy * heights[:, np.newaxis] + ctr_y[:, np.newaxis]
     pred_w = np.exp(dw) * widths[:, np.newaxis]
     pred_h = np.exp(dh) * heights[:, np.newaxis]
+    pred_theta = theta
 
     if DEBUG:
         print 'pred_ctr_shape',pred_ctr_x.shape
@@ -82,14 +88,16 @@ def orient_bbox_transform_inv(boxes, deltas):
         print 'pred_w_shape',pred_w.shape
 
     pred_boxes = np.zeros(deltas.shape, dtype=deltas.dtype)
-    # x1
-    pred_boxes[:, 0::5] = pred_ctr_x - 0.5 * pred_w
-    # y1
-    pred_boxes[:, 1::5] = pred_ctr_y - 0.5 * pred_h
-    # x2
-    pred_boxes[:, 2::5] = pred_ctr_x + 0.5 * pred_w
-    # y2
-    pred_boxes[:, 3::5] = pred_ctr_y + 0.5 * pred_h
+    # x
+    pred_boxes[:, 0::5] = pred_ctr_x
+    # y
+    pred_boxes[:, 1::5] = pred_ctr_y
+    # w
+    pred_boxes[:, 2::5] = pred_w
+    # h
+    pred_boxes[:, 3::5] = pred_h
+    # theta
+    pred_boxes[:, 4::5] = pred_theta
 
     return pred_boxes
 

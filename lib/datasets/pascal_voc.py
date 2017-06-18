@@ -18,6 +18,7 @@ import subprocess
 import uuid
 from voc_eval import voc_eval
 from fast_rcnn.config import cfg
+import time
 
 class pascal_voc(imdb):
     def __init__(self, image_set, year, devkit_path=None):
@@ -204,7 +205,7 @@ class pascal_voc(imdb):
             objs = non_diff_objs
         num_objs = len(objs)
 
-        boxes = np.zeros((num_objs, 5), dtype=np.uint16)
+        boxes = np.zeros((num_objs, 5), dtype=np.int32)
         gt_classes = np.zeros((num_objs), dtype=np.int32)
         overlaps = np.zeros((num_objs, self.num_classes), dtype=np.float32)
         # "Seg" area for pascal is just the box area
@@ -219,6 +220,8 @@ class pascal_voc(imdb):
             roi_width = float(bbox.find('label_width').text) - 1
             roi_height = float(bbox.find('label_height').text) - 1
             theta = float(bbox.find('angle').text)
+            #print theta
+            #time.sleep(5)
             cls = self._class_to_ind[obj.find('name').text.lower().strip()]
             boxes[ix, :] = [x, y, roi_width, roi_height, theta]
             gt_classes[ix] = cls

@@ -55,8 +55,8 @@ import cv2
 
 PIE_180 = 3.1415926535 / 180.0
 
-def generate_anchors(base_size=16, ratios=[0.5, 1, 2],
-                     scales=2**np.arange(3, 6),
+def generate_anchors(base_size=16, ratios=[2],
+                     scales=2**np.arange(3,6),
                      angles = [-30, 0, 30, 60, 80, 120]):
     """
     Generate anchor (reference) windows by enumerating aspect ratios X
@@ -64,12 +64,13 @@ def generate_anchors(base_size=16, ratios=[0.5, 1, 2],
     """
 
     base_anchor = np.array([1, 1, base_size, base_size]) - 1
-    ratio_anchors = _ratio_enum(base_anchor, ratios)
+    ratio_anchors = _non_ratio_enum(base_anchor, ratios)
     anchors = np.vstack([_scale_enum(ratio_anchors[i, :], scales)
                          for i in xrange(ratio_anchors.shape[0])])
     anchors = np.vstack([_angle_enum(anchors[i, :], angles)
                          for i in xrange(anchors.shape[0])])
-    # print(anchors.shape)
+    print(anchors.shape)
+    print(anchors)
     return anchors
 
 def _whctrs(anchor):
@@ -95,6 +96,23 @@ def _mkanchors(ws, hs, x_ctr, y_ctr):
                          y_ctr - 0.5 * (hs - 1),
                          x_ctr + 0.5 * (ws - 1),
                          y_ctr + 0.5 * (hs - 1)))
+    return anchors
+
+def _non_ratio_enum(anchor, ratios):
+    """
+    Enumerate a set of anchors for each aspect ratio wrt an anchor.
+    """
+
+    w, h, x_ctr, y_ctr = _whctrs(anchor)
+
+    # print(w, h, x_ctr, y_ctr)
+
+    size = w * h
+    size_ratios = size / ratios
+    ws = np.round(np.sqrt(size_ratios))
+    hs = np.round(ws * ratios)
+    anchors = _mkanchors(ws, hs, x_ctr, y_ctr)
+    # print('ws', ws, 'hs', hs, 'anchors', anchors)
     return anchors
 
 def _ratio_enum(anchor, ratios):
