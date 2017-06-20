@@ -55,7 +55,7 @@ import cv2
 
 PIE_180 = 3.1415926535 / 180.0
 
-def generate_anchors(base_size=16, ratios=[2],
+def generate_anchors(base_size=16, ratios=[1],
                      scales=2**np.arange(3,6),
                      angles = [-30, 0, 30, 60, 80, 120]):
     """

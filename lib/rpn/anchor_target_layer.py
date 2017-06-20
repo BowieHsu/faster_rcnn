@@ -28,18 +28,18 @@ class AnchorTargetLayer(caffe.Layer):
     def setup(self, bottom, top):
         layer_params = yaml.load(self.param_str_)
         anchor_scales = layer_params.get('scales', (8, 16, 32))
-        self._anchors = generate_anchors(scales=np.array(anchor_scales))
+
+        self._anchors= generate_anchors(scales=np.array(anchor_scales))
         self._num_anchors = self._anchors.shape[0]
         self._feat_stride = layer_params['feat_stride']
 
         if DEBUG:
-            print ('layer_params',layer_params)
             print 'anchors:'
             print self._anchors
             print 'anchor shapes:'
             print np.hstack((
-                self._anchors[:, 2::4] - self._anchors[:, 0::4],
-                self._anchors[:, 3::4] - self._anchors[:, 1::4],
+                self._anchors[:, 2::5] - self._anchors[:, 0::5],
+                self._anchors[:, 3::5] - self._anchors[:, 1::5],
             ))
             self._counts = cfg.EPS
             self._sums = np.zeros((1, 5))
@@ -92,28 +92,14 @@ class AnchorTargetLayer(caffe.Layer):
             print 'rpn: gt_boxes.shape', gt_boxes.shape
             print 'rpn: gt_boxes', gt_boxes
 
-        #time.sleep(10)
         # 1. Generate proposals from bbox deltas and shifted anchors
         shift_x = np.arange(0, width) * self._feat_stride
         shift_y = np.arange(0, height) * self._feat_stride
         shift_x, shift_y = np.meshgrid(shift_x, shift_y)
-        # shifts = np.vstack((shift_x.ravel(), shift_y.ravel(),
-                            # shift_x.ravel(), shift_y.ravel())).transpose()
-
-        # produce new kind of shifts with type (x,y,w,h,theta)
-        shift_w = np.zeros(shift_x.shape)
-        shift_h = np.zeros(shift_x.shape)
         shift_theta = np.zeros(shift_x.shape)
         shifts = np.vstack((shift_x.ravel(), shift_y.ravel(),
-                            shift_w.ravel(), shift_h.ravel(), shift_theta.ravel())).transpose()
+                            shift_x.ravel(), shift_y.ravel(), shift_theta.ravel())).transpose()
 
-        if DEBUG:
-            print 'shift_x'
-            print shift_x
-            print 'shift_y'
-            print shift_y
-            print 'shifts'
-            print shifts
         # add A anchors (1, A, 4) to
         # cell K shifts (K, 1, 4) to get
         # shift anchors (K, A, 4)
@@ -121,33 +107,53 @@ class AnchorTargetLayer(caffe.Layer):
         A = self._num_anchors
         K = shifts.shape[0]
 
-        # print 'A'
-        # print A
-        # print 'K'
-        # print K
-        # print self._anchors.reshape((1, A, 5))
-        # print shifts.reshape((1, K, 5))
+        overlap_anchors = self._anchors.copy()
+        overlap_anchors[:,0] = self._anchors[:,0] - self._anchors[:,2]/2
+        overlap_anchors[:,1] = self._anchors[:,1] - self._anchors[:,3]/2
+        overlap_anchors[:,2] = self._anchors[:,0] + self._anchors[:,2]/2
+        overlap_anchors[:,3] = self._anchors[:,1] + self._anchors[:,3]/2
 
-        all_anchors = (self._anchors.reshape((1, A, 5)) +
+        angle = self._anchors[:,4]
+        a = np.cos(angle)/2
+        b = np.sin(angle)/2
+
+        p_0_x = self._anchors[:,0] - self._anchors[:,2] * a + self._anchors[:,3] * b
+        p_0_y = self._anchors[:,1] - self._anchors[:,2] * b - self._anchors[:,3] * a
+        p_3_x = self._anchors[:,0] - self._anchors[:,2] * a - self._anchors[:,3] * b
+        p_3_y = self._anchors[:,1] - self._anchors[:,2] * b + self._anchors[:,3] * a
+
+        p_1_x = 2 * self._anchors[:,0] - p_3_x
+        p_1_y = 2 * self._anchors[:,1] - p_3_y
+        p_2_x = 2 * self._anchors[:,0] - p_0_x
+        p_2_y = 2 * self._anchors[:,1] - p_0_y
+
+        x_min = []
+        y_min = []
+        x_max = []
+        y_max = []
+
+        for i in range(0,len(p_0_x)):
+            x_min.append(min(p_0_x[i],p_1_x[i],p_2_x[i],p_3_x[i]))
+            x_max.append(max(p_0_x[i],p_1_x[i],p_2_x[i],p_3_x[i]))
+            y_min.append(min(p_0_y[i],p_1_y[i],p_2_y[i],p_3_y[i]))
+            y_max.append(max(p_0_y[i],p_1_y[i],p_2_y[i],p_3_y[i]))
+
+        overlap_anchors[:,0] = x_min
+        overlap_anchors[:,1] = y_min
+        overlap_anchors[:,2] = x_max
+        overlap_anchors[:,3] = y_max
+
+        all_anchors = (overlap_anchors.reshape((1, A, 5)) +
                        shifts.reshape((1, K, 5)).transpose((1, 0, 2)))
         all_anchors = all_anchors.reshape((K * A, 5))
         total_anchors = int(K * A)
 
-        # print all_anchors
-
         # only keep anchors inside the image
-        # inds_inside = np.where(
-            # (all_anchors[:, 0] >= -self._allowed_border) &
-            # (all_anchors[:, 1] >= -self._allowed_border) &
-            # (all_anchors[:, 2] < im_info[1] + self._allowed_border) &  # width
-            # (all_anchors[:, 3] < im_info[0] + self._allowed_border)    # height
-        # )[0]
-
         inds_inside = np.where(
-                (all_anchors[:, 0] - all_anchors[:,2]/2 >= -self._allowed_border) &
-                (all_anchors[:, 1] - all_anchors[:,3]/2 >= -self._allowed_border) &
-                (all_anchors[:, 0] + all_anchors[:,2]/2 < im_info[1] + self._allowed_border) &  # width
-                (all_anchors[:, 1] + all_anchors[:,2]/2 < im_info[0] + self._allowed_border)    # height
+            (all_anchors[:, 0] >= -self._allowed_border) &
+            (all_anchors[:, 1] >= -self._allowed_border) &
+            (all_anchors[:, 2] < im_info[1] + self._allowed_border) &  # width
+            (all_anchors[:, 3] < im_info[0] + self._allowed_border)    # height
         )[0]
 
         if DEBUG:
@@ -163,11 +169,57 @@ class AnchorTargetLayer(caffe.Layer):
         labels = np.empty((len(inds_inside), ), dtype=np.float32)
         labels.fill(-1)
 
+        if DEBUG:
+            print(anchors)
+            #print(gt_boxes)
         # overlaps between the anchors and the gt boxes
         # overlaps (ex, gt)
+
+        overlap_gt_boxes = gt_boxes.copy()
+        # overlap_gt_boxes[:,0] = gt_boxes[:,0] - gt_boxes[:,2]/2
+        # overlap_gt_boxes[:,1] = gt_boxes[:,1] - gt_boxes[:,3]/2
+        # overlap_gt_boxes[:,2] = gt_boxes[:,0] + gt_boxes[:,2]/2
+        # overlap_gt_boxes[:,3] = gt_boxes[:,1] + gt_boxes[:,3]/2
+
+        angle = gt_boxes[:,4]
+        a = np.cos(angle)/2
+        b = np.sin(angle)/2
+
+        p_0_x = gt_boxes[:,0] - gt_boxes[:,2] * a + gt_boxes[:,3] * b
+        p_0_y = gt_boxes[:,1] - gt_boxes[:,2] * b - gt_boxes[:,3] * a
+        p_3_x = gt_boxes[:,0] - gt_boxes[:,2] * a - gt_boxes[:,3] * b
+        p_3_y = gt_boxes[:,1] - gt_boxes[:,2] * b + gt_boxes[:,3] * a
+
+        p_1_x = 2 * gt_boxes[:,0] - p_3_x
+        p_1_y = 2 * gt_boxes[:,1] - p_3_y
+        p_2_x = 2 * gt_boxes[:,0] - p_0_x
+        p_2_y = 2 * gt_boxes[:,1] - p_0_y
+
+        x_min = []
+        y_min = []
+        x_max = []
+        y_max = []
+
+        for i in range(0,len(p_0_x)):
+            x_min.append(min(p_0_x[i],p_1_x[i],p_2_x[i],p_3_x[i]))
+            x_max.append(max(p_0_x[i],p_1_x[i],p_2_x[i],p_3_x[i]))
+            y_min.append(min(p_0_y[i],p_1_y[i],p_2_y[i],p_3_y[i]))
+            y_max.append(max(p_0_y[i],p_1_y[i],p_2_y[i],p_3_y[i]))
+
+        overlap_gt_boxes[:,0] = x_min
+        overlap_gt_boxes[:,1] = y_min
+        overlap_gt_boxes[:,2] = x_max
+        overlap_gt_boxes[:,3] = y_max
+        if DEBUG:
+            print(overlap_gt_boxes)
+
         overlaps = bbox_overlaps(
             np.ascontiguousarray(anchors, dtype=np.float),
-            np.ascontiguousarray(gt_boxes, dtype=np.float))
+            np.ascontiguousarray(overlap_gt_boxes, dtype=np.float))
+
+        # overlaps = bbox_overlaps(
+            # np.ascontiguousarray(anchors, dtype=np.float),
+            # np.ascontiguousarray(gt_boxes, dtype=np.float))
         argmax_overlaps = overlaps.argmax(axis=1)
         max_overlaps = overlaps[np.arange(len(inds_inside)), argmax_overlaps]
         gt_argmax_overlaps = overlaps.argmax(axis=0)
@@ -206,25 +258,15 @@ class AnchorTargetLayer(caffe.Layer):
             labels[disable_inds] = -1
             #print "was %s inds, disabling %s, now %s inds" % (
                 #len(bg_inds), len(disable_inds), np.sum(labels == 0))
-        # print('anchor_target_layer inds_inside',len(inds_inside))
-        # time.sleep(20)
+
         bbox_targets = np.zeros((len(inds_inside), 5), dtype=np.float32)
-        bbox_targets = _compute_targets(anchors, gt_boxes[argmax_overlaps, :])
+        # bbox_targets = _compute_targets(anchors, gt_boxes[argmax_overlaps, :])
+        bbox_targets = _compute_targets(anchors, overlap_gt_boxes[argmax_overlaps, :])
 
         bbox_inside_weights = np.zeros((len(inds_inside), 5), dtype=np.float32)
-
-        # print(cfg.TRAIN.RPN_BBOX_INSIDE_WEIGHTS)
-
         bbox_inside_weights[labels == 1, :] = np.array(cfg.TRAIN.RPN_BBOX_INSIDE_WEIGHTS)
 
         bbox_outside_weights = np.zeros((len(inds_inside), 5), dtype=np.float32)
-
-        if DEBUG:
-            print 'bbox_inside_weights'
-            print bbox_inside_weights
-            print 'bbox_outside_weights'
-            print bbox_outside_weights
-
         if cfg.TRAIN.RPN_POSITIVE_WEIGHT < 0:
             # uniform weighting of examples (given non-uniform sampling)
             num_examples = np.sum(labels >= 0)
@@ -246,7 +288,6 @@ class AnchorTargetLayer(caffe.Layer):
             self._counts += np.sum(labels == 1)
             means = self._sums / self._counts
             stds = np.sqrt(self._squared_sums / self._counts - means ** 2)
-            print 'self._counts', self._counts, 'self._sums', self._sums
             print 'means:'
             print means
             print 'stdevs:'
@@ -325,7 +366,5 @@ def _compute_targets(ex_rois, gt_rois):
     assert ex_rois.shape[0] == gt_rois.shape[0]
     assert ex_rois.shape[1] == 5
     assert gt_rois.shape[1] == 6
-    # print gt_rois.shape[1]
-
 
     return bbox_transform(ex_rois, gt_rois[:, :5]).astype(np.float32, copy=False)

@@ -11,15 +11,8 @@ __sets = {}
 
 from datasets.pascal_voc import pascal_voc
 from datasets.coco import coco
-from datasets.railway import railway
 # from datasets.insulator import insulator
 import numpy as np
-
-# set up railway datasets
-for year in ['20170611']:
-    for split in ('trainval', 'test'):
-        name = 'railway_{}_{}'.format(year, split)
-        __sets[name] = (lambda  split=split, year=year:railway(split, year))
 
 # Set up voc_<year>_<split> using selective search "fast" mode
 for year in ['2007', '2012']:
@@ -39,6 +32,11 @@ for year in ['2015']:
         name = 'coco_{}_{}'.format(year, split)
         __sets[name] = (lambda split=split, year=year: coco(split, year))
 
+# insulator_devkit_path = '~/DEEP_LEARNING_Code/detect-faster-rcnn/data/insulator'
+for split in ['train', 'test']:
+    name = '{}_{}'.format('insulator', split)
+    __sets[name] = (lambda split=split:insulator(split, insulator_devkit_path))
+
 def get_imdb(name):
     """Get an imdb (image database) by name."""
     if not __sets.has_key(name):
@@ -48,3 +46,4 @@ def get_imdb(name):
 def list_imdbs():
     """List all registered imdbs."""
     return __sets.keys()
+

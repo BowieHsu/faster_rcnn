@@ -81,6 +81,7 @@ __C.TRAIN.USE_PREFETCH = False
 
 # Normalize the targets (subtract empirical mean, divide by empirical stddev)
 __C.TRAIN.BBOX_NORMALIZE_TARGETS = True
+# __C.TRAIN.BBOX_NORMALIZE_TARGETS = False
 # Deprecated (inside weights)
 __C.TRAIN.BBOX_INSIDE_WEIGHTS = (1.0, 1.0, 1.0, 1.0, 1.0)
 # Normalize the targets using "precomputed" (or made up) means and stdevs
@@ -95,8 +96,7 @@ __C.TRAIN.PROPOSAL_METHOD = 'selective_search'
 # Make minibatches from images that have similar aspect ratios (i.e. both
 # tall and thin or both short and wide) in order to avoid wasting computation
 # on zero-padding.
-# __C.TRAIN.ASPECT_GROUPING = True
-__C.TRAIN.ASPECT_GROUPING = False
+__C.TRAIN.ASPECT_GROUPING = True
 
 # Use RPN to detect objects
 __C.TRAIN.HAS_RPN = False
@@ -196,6 +196,8 @@ __C.DATA_DIR = osp.abspath(osp.join(__C.ROOT_DIR, 'data'))
 
 # Model directory
 __C.MODELS_DIR = osp.abspath(osp.join(__C.ROOT_DIR, 'models', 'pascal_voc'))
+
+__C.MODELS_DATA_DIR = osp.abspath(osp.join(__C.ROOT_DIR, 'output', 'faster_rcnn_end2end','voc_2007_trainval'))
 
 # Name (or path to) the matlab executable
 __C.MATLAB = 'matlab'

@@ -18,7 +18,6 @@ import subprocess
 import uuid
 from voc_eval import voc_eval
 from fast_rcnn.config import cfg
-import time
 
 class pascal_voc(imdb):
     def __init__(self, image_set, year, devkit_path=None):
@@ -29,9 +28,7 @@ class pascal_voc(imdb):
                             else devkit_path
         self._data_path = os.path.join(self._devkit_path, 'VOC' + self._year)
         self._classes = ('__background__', # always index 0
-                         'gongjian')
-        # self._classes = ('__background__', # always index 0
-                         # 'shijin','chunsheng','weiquan','cici')
+                        'gongjian')
         # self._classes = ('__background__', # always index 0
                          # 'aeroplane', 'bicycle', 'bird', 'boat',
                          # 'bottle', 'bus', 'car', 'cat', 'chair',
@@ -205,6 +202,7 @@ class pascal_voc(imdb):
             objs = non_diff_objs
         num_objs = len(objs)
 
+        #boxes = np.zeros((num_objs, 5), dtype=np.uint16)
         boxes = np.zeros((num_objs, 5), dtype=np.int32)
         gt_classes = np.zeros((num_objs), dtype=np.int32)
         overlaps = np.zeros((num_objs, self.num_classes), dtype=np.float32)
@@ -217,16 +215,15 @@ class pascal_voc(imdb):
             # Make pixel indexes 0-based
             x = float(bbox.find('center_x').text) - 1
             y = float(bbox.find('center_y').text) - 1
-            roi_width = float(bbox.find('label_width').text) - 1
-            roi_height = float(bbox.find('label_height').text) - 1
+            w = float(bbox.find('label_width').text)
+            h = float(bbox.find('label_height').text) 
             theta = float(bbox.find('angle').text)
-            #print theta
-            #time.sleep(5)
             cls = self._class_to_ind[obj.find('name').text.lower().strip()]
-            boxes[ix, :] = [x, y, roi_width, roi_height, theta]
+            boxes[ix, :] = [x, y, w, h, theta]
             gt_classes[ix] = cls
             overlaps[ix, cls] = 1.0
-            seg_areas[ix] = roi_width * roi_height
+            #seg_areas[ix] = (x2 - x1 + 1) * (y2 - y1 + 1)
+            seg_areas[ix] = w * h 
 
         overlaps = scipy.sparse.csr_matrix(overlaps)
 

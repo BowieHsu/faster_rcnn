@@ -10,10 +10,13 @@ import numpy as np
 import yaml
 from fast_rcnn.config import cfg
 from generate_anchors import generate_anchors
-from fast_rcnn.bbox_transform import bbox_transform_inv, clip_boxes,orient_bbox_transform_inv
+from fast_rcnn.bbox_transform import bbox_transform_inv, clip_boxes
 from fast_rcnn.nms_wrapper import nms
+import cv2
+import time
 
-DEBUG = False
+# DEBUG = False
+DEBUG = True
 
 class ProposalLayer(caffe.Layer):
     """
@@ -61,7 +64,9 @@ class ProposalLayer(caffe.Layer):
         assert bottom[0].data.shape[0] == 1, \
             'Only single item batches are supported'
 
+
         cfg_key = str(self.phase) # either 'TRAIN' or 'TEST'
+
         pre_nms_topN  = cfg[cfg_key].RPN_PRE_NMS_TOP_N
         post_nms_topN = cfg[cfg_key].RPN_POST_NMS_TOP_N
         nms_thresh    = cfg[cfg_key].RPN_NMS_THRESH
@@ -87,14 +92,10 @@ class ProposalLayer(caffe.Layer):
         shift_x = np.arange(0, width) * self._feat_stride
         shift_y = np.arange(0, height) * self._feat_stride
         shift_x, shift_y = np.meshgrid(shift_x, shift_y)
-        # shifts = np.vstack((shift_x.ravel(), shift_y.ravel(),
-                            # shift_x.ravel(), shift_y.ravel())).transpose()
-
-        shift_w = np.zeros(shift_x.shape)
-        shift_h = np.zeros(shift_x.shape)
         shift_theta = np.zeros(shift_x.shape)
         shifts = np.vstack((shift_x.ravel(), shift_y.ravel(),
-                            shift_w.ravel(), shift_h.ravel(), shift_theta.ravel())).transpose()
+                            shift_x.ravel(), shift_y.ravel(), shift_theta.ravel())).transpose()
+
         # Enumerate all shifted anchors:
         #
         # add A anchors (1, A, 4) to
@@ -103,7 +104,45 @@ class ProposalLayer(caffe.Layer):
         # reshape to (K*A, 4) shifted anchors
         A = self._num_anchors
         K = shifts.shape[0]
-        anchors = self._anchors.reshape((1, A, 5)) + \
+
+        overlap_anchors = self._anchors.copy()
+
+        overlap_anchors[:,0] = self._anchors[:,0] - self._anchors[:,2]/2
+        overlap_anchors[:,1] = self._anchors[:,1] - self._anchors[:,3]/2
+        overlap_anchors[:,2] = self._anchors[:,0] + self._anchors[:,2]/2
+        overlap_anchors[:,3] = self._anchors[:,1] + self._anchors[:,3]/2
+
+        angle = self._anchors[:,4]
+        a = np.cos(angle)/2
+        b = np.sin(angle)/2
+
+        p_0_x = self._anchors[:,0] - self._anchors[:,2] * a + self._anchors[:,3] * b
+        p_0_y = self._anchors[:,1] - self._anchors[:,2] * b - self._anchors[:,3] * a
+        p_3_x = self._anchors[:,0] - self._anchors[:,2] * a - self._anchors[:,3] * b
+        p_3_y = self._anchors[:,1] - self._anchors[:,2] * b + self._anchors[:,3] * a
+
+        p_1_x = 2 * self._anchors[:,0] - p_3_x
+        p_1_y = 2 * self._anchors[:,1] - p_3_y
+        p_2_x = 2 * self._anchors[:,0] - p_0_x
+        p_2_y = 2 * self._anchors[:,1] - p_0_y
+
+        x_min = []
+        y_min = []
+        x_max = []
+        y_max = []
+        
+        for i in range(0,len(p_0_x)):
+            x_min.append(min(p_0_x[i],p_1_x[i],p_2_x[i],p_3_x[i]))
+            x_max.append(max(p_0_x[i],p_1_x[i],p_2_x[i],p_3_x[i]))
+            y_min.append(min(p_0_y[i],p_1_y[i],p_2_y[i],p_3_y[i]))
+            y_max.append(max(p_0_y[i],p_1_y[i],p_2_y[i],p_3_y[i]))
+
+        overlap_anchors[:,0] = x_min
+        overlap_anchors[:,1] = y_min
+        overlap_anchors[:,2] = x_max
+        overlap_anchors[:,3] = y_max
+
+        anchors = overlap_anchors.reshape((1, A, 5)) + \
                   shifts.reshape((1, K, 5)).transpose((1, 0, 2))
         anchors = anchors.reshape((K * A, 5))
 
@@ -114,13 +153,7 @@ class ProposalLayer(caffe.Layer):
         # transpose to (1, H, W, 4 * A)
         # reshape to (1 * H * W * A, 4) where rows are ordered by (h, w, a)
         # in slowest to fastest order
-        print 'bbox_deltas'
-        print bbox_deltas
-
         bbox_deltas = bbox_deltas.transpose((0, 2, 3, 1)).reshape((-1, 5))
-
-        print 'fucked bbox_deltas'
-        print bbox_deltas
 
         # Same story for the scores:
         #
@@ -130,11 +163,13 @@ class ProposalLayer(caffe.Layer):
         scores = scores.transpose((0, 2, 3, 1)).reshape((-1, 1))
 
         # Convert anchors into proposals via bbox transformations
-        # proposals = bbox_transform_inv(anchors, bbox_deltas)
-        proposals = orient_bbox_transform_inv(anchors, bbox_deltas)
+        proposals = bbox_transform_inv(anchors, bbox_deltas)
 
         # 2. clip predicted boxes to image
         proposals = clip_boxes(proposals, im_info[:2])
+
+        print('clip_proposals_shape')
+        print(proposals.shape)
 
         # 3. remove predicted boxes with either height or width < threshold
         # (NOTE: convert min_size to input image scale stored in im_info[2])
@@ -153,7 +188,12 @@ class ProposalLayer(caffe.Layer):
         # 6. apply nms (e.g. threshold = 0.7)
         # 7. take after_nms_topN (e.g. 300)
         # 8. return the top proposals (-> RoIs top)
-        keep = nms(np.hstack((proposals, scores)), nms_thresh)
+        # print proposals
+        # print proposals.shape
+        # time.sleep(10)
+
+        keep = nms(np.hstack((proposals[:,0:4], scores)), nms_thresh)
+
         if post_nms_topN > 0:
             keep = keep[:post_nms_topN]
         proposals = proposals[keep, :]

@@ -29,13 +29,10 @@ class RoIDataLayer(caffe.Layer):
             vert = np.logical_not(horz)
             horz_inds = np.where(horz)[0]
             vert_inds = np.where(vert)[0]
-            print(horz_inds, vert_inds)
             inds = np.hstack((
                 np.random.permutation(horz_inds),
                 np.random.permutation(vert_inds)))
-            print('layer_py_inds',inds)
             inds = np.reshape(inds, (-1, 2))
-            # print('layer_py_inds',inds)
             row_perm = np.random.permutation(np.arange(inds.shape[0]))
             inds = np.reshape(inds[row_perm, :], (-1,))
             self._perm = inds
@@ -58,15 +55,11 @@ class RoIDataLayer(caffe.Layer):
         If cfg.TRAIN.USE_PREFETCH is True, then blobs will be computed in a
         separate process and made available through self._blob_queue.
         """
-
-        # print 'USE_PREFETCH',cfg.TRAIN.USE_PREFETCH
         if cfg.TRAIN.USE_PREFETCH:
             return self._blob_queue.get()
         else:
             db_inds = self._get_next_minibatch_inds()
-            # print('dddddind',db_inds)
             minibatch_db = [self._roidb[i] for i in db_inds]
-                # print(self._roidb[i])
             return get_minibatch(minibatch_db, self._num_classes)
 
     def set_roidb(self, roidb):
@@ -103,13 +96,13 @@ class RoIDataLayer(caffe.Layer):
             max(cfg.TRAIN.SCALES), cfg.TRAIN.MAX_SIZE)
         self._name_to_top_map['data'] = idx
         idx += 1
-
+    
         if cfg.TRAIN.HAS_RPN:
             top[idx].reshape(1, 3)
             self._name_to_top_map['im_info'] = idx
             idx += 1
 
-            top[idx].reshape(1, 5)
+            top[idx].reshape(1, 4)
             self._name_to_top_map['gt_boxes'] = idx
             idx += 1
         else: # not using RPN
@@ -129,35 +122,28 @@ class RoIDataLayer(caffe.Layer):
             if cfg.TRAIN.BBOX_REG:
                 # bbox_targets blob: R bounding-box regression targets with 4
                 # targets per class
-                top[idx].reshape(1, self._num_classes * 5)
+                top[idx].reshape(1, self._num_classes * 4)
                 self._name_to_top_map['bbox_targets'] = idx
                 idx += 1
 
                 # bbox_inside_weights blob: At most 4 targets per roi are active;
                 # thisbinary vector sepcifies the subset of active targets
-                top[idx].reshape(1, self._num_classes * 5)
+                top[idx].reshape(1, self._num_classes * 4)
                 self._name_to_top_map['bbox_inside_weights'] = idx
                 idx += 1
 
-                top[idx].reshape(1, self._num_classes * 5)
+                top[idx].reshape(1, self._num_classes * 4)
                 self._name_to_top_map['bbox_outside_weights'] = idx
                 idx += 1
 
-        # print 'RoiDataLayer: name_to_top:', self._name_to_top_map
+        print 'RoiDataLayer: name_to_top:', self._name_to_top_map
         assert len(top) == len(self._name_to_top_map)
 
     def forward(self, bottom, top):
         """Get blobs and copy them into this layer's top blob vector."""
         blobs = self._get_next_minibatch()
 
-        #i = 0
         for blob_name, blob in blobs.iteritems():
-
-            # print i
-            # print 'blob_name',blob_name
-            # print 'blob',blob
-            #i += 1
-
             top_ind = self._name_to_top_map[blob_name]
             # Reshape net's input blobs
             top[top_ind].reshape(*(blob.shape))

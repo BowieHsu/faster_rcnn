@@ -13,11 +13,11 @@ import roi_data_layer.roidb as rdl_roidb
 from utils.timer import Timer
 import numpy as np
 import os
-import time
 
 from caffe.proto import caffe_pb2
 import google.protobuf as pb2
 import google.protobuf.text_format
+import time
 
 class SolverWrapper(object):
     """A simple wrapper around Caffe's solver.
@@ -36,11 +36,14 @@ class SolverWrapper(object):
             # fixed statistics to compute a priori
             assert cfg.TRAIN.BBOX_NORMALIZE_TARGETS_PRECOMPUTED
 
+        print roidb
         if cfg.TRAIN.BBOX_REG:
             print 'Computing bounding-box regression targets...'
             self.bbox_means, self.bbox_stds = \
                     rdl_roidb.add_bbox_regression_targets(roidb)
             print 'done'
+        print roidb
+        # time.sleep(10)
 
         self.solver = caffe.SGDSolver(solver_prototxt)
         if pretrained_model is not None:
@@ -63,8 +66,6 @@ class SolverWrapper(object):
         scale_bbox_params = (cfg.TRAIN.BBOX_REG and
                              cfg.TRAIN.BBOX_NORMALIZE_TARGETS and
                              net.params.has_key('bbox_pred'))
-
-        # print(net.params)
 
         if scale_bbox_params:
             # save original values
@@ -107,11 +108,11 @@ class SolverWrapper(object):
             if self.solver.iter % (10 * self.solver_param.display) == 0:
                 print 'speed: {:.3f}s / iter'.format(timer.average_time)
 
-            if self.solver.iter % cfg.TRAIN.SNAPSHOT_ITERS == 0:
+            if self.solver.iter % 500 == 0:
                 last_snapshot_iter = self.solver.iter
                 model_paths.append(self.snapshot())
 
-            if self.solver.iter % 1000 == 0:
+            if self.solver.iter % cfg.TRAIN.SNAPSHOT_ITERS == 0:
                 last_snapshot_iter = self.solver.iter
                 model_paths.append(self.snapshot())
 
@@ -129,9 +130,7 @@ def get_training_roidb(imdb):
     print 'Preparing training data...'
     rdl_roidb.prepare_roidb(imdb)
     print 'done'
-    
-    print imdb.roidb
-    # time.sleep(10)
+
     return imdb.roidb
 
 def filter_roidb(roidb):

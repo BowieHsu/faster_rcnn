@@ -23,12 +23,12 @@ def prepare_roidb(imdb):
     """
     sizes = [PIL.Image.open(imdb.image_path_at(i)).size
              for i in xrange(imdb.num_images)]
-
     roidb = imdb.roidb
     for i in xrange(len(imdb.image_index)):
         roidb[i]['image'] = imdb.image_path_at(i)
         roidb[i]['width'] = sizes[i][0]
         roidb[i]['height'] = sizes[i][1]
+
         # need gt_overlaps as a dense array for argmax
         gt_overlaps = roidb[i]['gt_overlaps'].toarray()
         # max overlap with gt over classes (columns)
@@ -57,8 +57,12 @@ def add_bbox_regression_targets(roidb):
         rois = roidb[im_i]['boxes']
         max_overlaps = roidb[im_i]['max_overlaps']
         max_classes = roidb[im_i]['max_classes']
+        # print rois
         roidb[im_i]['bbox_targets'] = \
                 _compute_targets(rois, max_overlaps, max_classes)
+        
+        # print roidb[im_i]['bbox_targets']
+        # time.sleep(10)
 
     if cfg.TRAIN.BBOX_NORMALIZE_TARGETS_PRECOMPUTED:
         # Use fixed / precomputed "means" and "stds" instead of empirical values
@@ -70,8 +74,8 @@ def add_bbox_regression_targets(roidb):
         # Compute values needed for means and stds
         # var(x) = E(x^2) - E(x)^2
         class_counts = np.zeros((num_classes, 1)) + cfg.EPS
-        sums = np.zeros((num_classes, 5))
-        squared_sums = np.zeros((num_classes, 5))
+        sums = np.zeros((num_classes, 4))
+        squared_sums = np.zeros((num_classes, 4))
         for im_i in xrange(num_images):
             targets = roidb[im_i]['bbox_targets']
             for cls in xrange(1, num_classes):
@@ -85,13 +89,13 @@ def add_bbox_regression_targets(roidb):
         means = sums / class_counts
         stds = np.sqrt(squared_sums / class_counts - means ** 2)
 
-    # print 'bbox target means:'
-    # print means
-    # print means[1:, :].mean(axis=0) # ignore bg class
-    # print 'bbox target stdevs:'
-    # print stds
-    # print stds[1:, :].mean(axis=0) # ignore bg class
-
+    print 'bbox target means:'
+    print means
+    print means[1:, :].mean(axis=0) # ignore bg class
+    print 'bbox target stdevs:'
+    print stds
+    print stds[1:, :].mean(axis=0) # ignore bg class
+    
     # Normalize targets
     if cfg.TRAIN.BBOX_NORMALIZE_TARGETS:
         print "Normalizing targets"
@@ -114,7 +118,7 @@ def _compute_targets(rois, overlaps, labels):
     gt_inds = np.where(overlaps == 1)[0]
     if len(gt_inds) == 0:
         # Bail if the image has no ground-truth ROIs
-        return np.zeros((rois.shape[0], 5), dtype=np.float32)
+        return np.zeros((rois.shape[0], 6), dtype=np.float32)
     # Indices of examples for which we try to make predictions
     ex_inds = np.where(overlaps >= cfg.TRAIN.BBOX_THRESH)[0]
 
