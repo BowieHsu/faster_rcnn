@@ -53,11 +53,13 @@ import cv2
 
 #    return anchors
 
-PIE_180 = 3.1415926535 / 180.0
+PIE_180 = np.pi / 180.0
 
-def generate_anchors(base_size=16, ratios=[1],
+def generate_anchors(base_size=16, ratios=[1,2],
                      scales=2**np.arange(3,6),
-                     angles = [-30, 0, 30, 60, 80, 120]):
+                     #angles = [-30, -15, 0, 15, 30, 45, 60, 75, 90, 105, 120]):
+                     angles = [-150, -120, -90, -60, -30, 0, 30, 60, 90, 120, 150, 180]):
+                    #  angles = [-90, -80, -70, -80, -60, -50, -40, -30, -20, -10, 0, 10, 20, 30, 40, 50, 60, 70, 80, 90]):
     """
     Generate anchor (reference) windows by enumerating aspect ratios X
     scales wrt a reference (0, 0, 15, 15) window.

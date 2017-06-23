@@ -81,6 +81,8 @@ class AnchorTargetLayer(caffe.Layer):
         height, width = bottom[0].data.shape[-2:]
         # GT boxes (x1, y1, x2, y2, label)
         gt_boxes = bottom[1].data
+
+        # print 'anchor_target_gt_boxes', gt_boxes
         # im_info
         im_info = bottom[2].data[0, :]
 
@@ -96,10 +98,13 @@ class AnchorTargetLayer(caffe.Layer):
         shift_x = np.arange(0, width) * self._feat_stride
         shift_y = np.arange(0, height) * self._feat_stride
         shift_x, shift_y = np.meshgrid(shift_x, shift_y)
-        shift_theta = np.zeros(shift_x.shape)
-        shifts = np.vstack((shift_x.ravel(), shift_y.ravel(),
-                            shift_x.ravel(), shift_y.ravel(), shift_theta.ravel())).transpose()
+        shift_zeros = np.zeros(shift_x.shape)
 
+        overlap_shifts = np.vstack((shift_x.ravel(), shift_y.ravel(),
+                            shift_x.ravel(), shift_y.ravel(), shift_zeros.ravel())).transpose()
+
+        shifts = np.vstack((shift_x.ravel(), shift_y.ravel(),
+                            shift_zeros.ravel(), shift_zeros.ravel(), shift_zeros.ravel())).transpose()
         # add A anchors (1, A, 4) to
         # cell K shifts (K, 1, 4) to get
         # shift anchors (K, A, 4)
@@ -107,61 +112,26 @@ class AnchorTargetLayer(caffe.Layer):
         A = self._num_anchors
         K = shifts.shape[0]
 
-        overlap_anchors = self._anchors.copy()
-        overlap_anchors[:,0] = self._anchors[:,0] - self._anchors[:,2]/2
-        overlap_anchors[:,1] = self._anchors[:,1] - self._anchors[:,3]/2
-        overlap_anchors[:,2] = self._anchors[:,0] + self._anchors[:,2]/2
-        overlap_anchors[:,3] = self._anchors[:,1] + self._anchors[:,3]/2
+        '''
+        convert gt_boxes & anchors to rectangle
+        '''
+        overlap_gt_boxes = boxes_transform_to_rect(gt_boxes)
 
-        angle = self._anchors[:,4]
-        a = np.cos(angle)/2
-        b = np.sin(angle)/2
+        '''
+        input: x,y,w,h,theta
+        output: x1,y1,x2,y2,theta
+        '''
+        overlap_anchors  = boxes_transform_to_rect(self._anchors)
 
-        p_0_x = self._anchors[:,0] - self._anchors[:,2] * a + self._anchors[:,3] * b
-        p_0_y = self._anchors[:,1] - self._anchors[:,2] * b - self._anchors[:,3] * a
-        p_3_x = self._anchors[:,0] - self._anchors[:,2] * a - self._anchors[:,3] * b
-        p_3_y = self._anchors[:,1] - self._anchors[:,2] * b + self._anchors[:,3] * a
+        overlap_anchors, inds_inside  = combine_overlap_anchors_with_shifts(overlap_anchors, overlap_shifts, K, A, im_info, self._allowed_border)
 
-        p_1_x = 2 * self._anchors[:,0] - p_3_x
-        p_1_y = 2 * self._anchors[:,1] - p_3_y
-        p_2_x = 2 * self._anchors[:,0] - p_0_x
-        p_2_y = 2 * self._anchors[:,1] - p_0_y
+        # print 'before'
+        # print self._anchors
+        anchors = combine_anchors_with_shifts(self._anchors, inds_inside, shifts, K, A)
+        # print 'after'
 
-        x_min = []
-        y_min = []
-        x_max = []
-        y_max = []
-
-        for i in range(0,len(p_0_x)):
-            x_min.append(min(p_0_x[i],p_1_x[i],p_2_x[i],p_3_x[i]))
-            x_max.append(max(p_0_x[i],p_1_x[i],p_2_x[i],p_3_x[i]))
-            y_min.append(min(p_0_y[i],p_1_y[i],p_2_y[i],p_3_y[i]))
-            y_max.append(max(p_0_y[i],p_1_y[i],p_2_y[i],p_3_y[i]))
-
-        overlap_anchors[:,0] = x_min
-        overlap_anchors[:,1] = y_min
-        overlap_anchors[:,2] = x_max
-        overlap_anchors[:,3] = y_max
-
-        all_anchors = (overlap_anchors.reshape((1, A, 5)) +
-                       shifts.reshape((1, K, 5)).transpose((1, 0, 2)))
-        all_anchors = all_anchors.reshape((K * A, 5))
         total_anchors = int(K * A)
 
-        # only keep anchors inside the image
-        inds_inside = np.where(
-            (all_anchors[:, 0] >= -self._allowed_border) &
-            (all_anchors[:, 1] >= -self._allowed_border) &
-            (all_anchors[:, 2] < im_info[1] + self._allowed_border) &  # width
-            (all_anchors[:, 3] < im_info[0] + self._allowed_border)    # height
-        )[0]
-
-        if DEBUG:
-            print 'total_anchors', total_anchors
-            print 'inds_inside', len(inds_inside)
-
-        # keep only inside anchors
-        anchors = all_anchors[inds_inside, :]
         if DEBUG:
             print 'anchors.shape', anchors.shape
 
@@ -170,51 +140,13 @@ class AnchorTargetLayer(caffe.Layer):
         labels.fill(-1)
 
         if DEBUG:
-            print(anchors)
-            #print(gt_boxes)
-        # overlaps between the anchors and the gt boxes
-        # overlaps (ex, gt)
+            print(overlap_anchors)
 
-        overlap_gt_boxes = gt_boxes.copy()
-        # overlap_gt_boxes[:,0] = gt_boxes[:,0] - gt_boxes[:,2]/2
-        # overlap_gt_boxes[:,1] = gt_boxes[:,1] - gt_boxes[:,3]/2
-        # overlap_gt_boxes[:,2] = gt_boxes[:,0] + gt_boxes[:,2]/2
-        # overlap_gt_boxes[:,3] = gt_boxes[:,1] + gt_boxes[:,3]/2
-
-        angle = gt_boxes[:,4]
-        a = np.cos(angle)/2
-        b = np.sin(angle)/2
-
-        p_0_x = gt_boxes[:,0] - gt_boxes[:,2] * a + gt_boxes[:,3] * b
-        p_0_y = gt_boxes[:,1] - gt_boxes[:,2] * b - gt_boxes[:,3] * a
-        p_3_x = gt_boxes[:,0] - gt_boxes[:,2] * a - gt_boxes[:,3] * b
-        p_3_y = gt_boxes[:,1] - gt_boxes[:,2] * b + gt_boxes[:,3] * a
-
-        p_1_x = 2 * gt_boxes[:,0] - p_3_x
-        p_1_y = 2 * gt_boxes[:,1] - p_3_y
-        p_2_x = 2 * gt_boxes[:,0] - p_0_x
-        p_2_y = 2 * gt_boxes[:,1] - p_0_y
-
-        x_min = []
-        y_min = []
-        x_max = []
-        y_max = []
-
-        for i in range(0,len(p_0_x)):
-            x_min.append(min(p_0_x[i],p_1_x[i],p_2_x[i],p_3_x[i]))
-            x_max.append(max(p_0_x[i],p_1_x[i],p_2_x[i],p_3_x[i]))
-            y_min.append(min(p_0_y[i],p_1_y[i],p_2_y[i],p_3_y[i]))
-            y_max.append(max(p_0_y[i],p_1_y[i],p_2_y[i],p_3_y[i]))
-
-        overlap_gt_boxes[:,0] = x_min
-        overlap_gt_boxes[:,1] = y_min
-        overlap_gt_boxes[:,2] = x_max
-        overlap_gt_boxes[:,3] = y_max
         if DEBUG:
             print(overlap_gt_boxes)
 
         overlaps = bbox_overlaps(
-            np.ascontiguousarray(anchors, dtype=np.float),
+            np.ascontiguousarray(overlap_anchors, dtype=np.float),
             np.ascontiguousarray(overlap_gt_boxes, dtype=np.float))
 
         # overlaps = bbox_overlaps(
@@ -222,6 +154,7 @@ class AnchorTargetLayer(caffe.Layer):
             # np.ascontiguousarray(gt_boxes, dtype=np.float))
         argmax_overlaps = overlaps.argmax(axis=1)
         max_overlaps = overlaps[np.arange(len(inds_inside)), argmax_overlaps]
+
         gt_argmax_overlaps = overlaps.argmax(axis=0)
         gt_max_overlaps = overlaps[gt_argmax_overlaps,
                                    np.arange(overlaps.shape[1])]
@@ -261,7 +194,17 @@ class AnchorTargetLayer(caffe.Layer):
 
         bbox_targets = np.zeros((len(inds_inside), 5), dtype=np.float32)
         # bbox_targets = _compute_targets(anchors, gt_boxes[argmax_overlaps, :])
-        bbox_targets = _compute_targets(anchors, overlap_gt_boxes[argmax_overlaps, :])
+
+        '''
+        x y w h theta version anchors
+        x y w h theta version gt_boxes
+        x y w h theta bbox_targets
+        '''
+        # bbox_targets = _compute_targets(overlap_anchors, overlap_gt_boxes[argmax_overlaps, :])
+
+        # print 'anchors', anchors[:,4]
+        # time.sleep(1)
+        bbox_targets = _compute_targets(anchors, gt_boxes[argmax_overlaps, :])
 
         bbox_inside_weights = np.zeros((len(inds_inside), 5), dtype=np.float32)
         bbox_inside_weights[labels == 1, :] = np.array(cfg.TRAIN.RPN_BBOX_INSIDE_WEIGHTS)
@@ -368,3 +311,78 @@ def _compute_targets(ex_rois, gt_rois):
     assert gt_rois.shape[1] == 6
 
     return bbox_transform(ex_rois, gt_rois[:, :5]).astype(np.float32, copy=False)
+
+def boxes_transform_to_rect(gt_boxes):
+    overlap_gt_boxes = gt_boxes.copy()
+
+    angle = gt_boxes[:,4]
+    a = np.cos(angle)/2
+    b = np.sin(angle)/2
+
+    p_0_x = gt_boxes[:,0] - gt_boxes[:,2] * a + gt_boxes[:,3] * b
+    p_0_y = gt_boxes[:,1] - gt_boxes[:,2] * b - gt_boxes[:,3] * a
+    p_3_x = gt_boxes[:,0] - gt_boxes[:,2] * a - gt_boxes[:,3] * b
+    p_3_y = gt_boxes[:,1] - gt_boxes[:,2] * b + gt_boxes[:,3] * a
+
+    p_1_x = 2 * gt_boxes[:,0] - p_3_x
+    p_1_y = 2 * gt_boxes[:,1] - p_3_y
+    p_2_x = 2 * gt_boxes[:,0] - p_0_x
+    p_2_y = 2 * gt_boxes[:,1] - p_0_y
+
+    x_min = []
+    y_min = []
+    x_max = []
+    y_max = []
+
+    for i in range(0,len(p_0_x)):
+        x_min.append(min(p_0_x[i],p_1_x[i],p_2_x[i],p_3_x[i]))
+        x_max.append(max(p_0_x[i],p_1_x[i],p_2_x[i],p_3_x[i]))
+        y_min.append(min(p_0_y[i],p_1_y[i],p_2_y[i],p_3_y[i]))
+        y_max.append(max(p_0_y[i],p_1_y[i],p_2_y[i],p_3_y[i]))
+
+    overlap_gt_boxes[:,0] = x_min
+    overlap_gt_boxes[:,1] = y_min
+    overlap_gt_boxes[:,2] = x_max
+    overlap_gt_boxes[:,3] = y_max
+
+    return overlap_gt_boxes
+
+def combine_overlap_anchors_with_shifts(anchors, shifts, K, A, im_info, allowed_border):
+    all_anchors = (anchors.reshape((1, A, 5)) +
+                   shifts.reshape((1, K, 5)).transpose((1, 0, 2)))
+    all_anchors = all_anchors.reshape((K * A, 5))
+
+    # only keep anchors inside the image
+    inds_inside = np.where(
+        (all_anchors[:, 0] >= -allowed_border) &
+        (all_anchors[:, 1] >= -allowed_border) &
+        (all_anchors[:, 2] < im_info[1] + allowed_border) &  # width
+        (all_anchors[:, 3] < im_info[0] + allowed_border)    # height
+    )[0]
+
+    if DEBUG:
+        print 'total_anchors', total_anchors
+        print 'inds_inside', len(inds_inside)
+
+    # print inds_inside
+    # keep only inside anchors
+    anchors = all_anchors[inds_inside, :]
+
+    return anchors, inds_inside
+
+def combine_anchors_with_shifts(anchors, inds_inside, shifts, K, A):
+    all_anchors = (anchors.reshape((1, A, 5)) +
+                   shifts.reshape((1, K, 5)).transpose((1, 0, 2)))
+    all_anchors = all_anchors.reshape((K * A, 5))
+
+    # print ('combine anchors')
+    # print all_anchors
+
+    # keep only inside anchors
+    anchors = all_anchors[inds_inside, :]
+
+    # print inds_inside
+    # print ('inds inside anchors')
+    # print anchors
+    # time.sleep(10)
+    return anchors

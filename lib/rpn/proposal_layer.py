@@ -15,8 +15,8 @@ from fast_rcnn.nms_wrapper import nms
 import cv2
 import time
 
-# DEBUG = False
-DEBUG = True
+DEBUG = False
+# DEBUG = True
 
 class ProposalLayer(caffe.Layer):
     """
@@ -64,7 +64,6 @@ class ProposalLayer(caffe.Layer):
         assert bottom[0].data.shape[0] == 1, \
             'Only single item batches are supported'
 
-
         cfg_key = str(self.phase) # either 'TRAIN' or 'TEST'
 
         pre_nms_topN  = cfg[cfg_key].RPN_PRE_NMS_TOP_N
@@ -92,9 +91,10 @@ class ProposalLayer(caffe.Layer):
         shift_x = np.arange(0, width) * self._feat_stride
         shift_y = np.arange(0, height) * self._feat_stride
         shift_x, shift_y = np.meshgrid(shift_x, shift_y)
-        shift_theta = np.zeros(shift_x.shape)
+        # shift_theta = np.zeros(shift_x.shape)
+        shift_zeros = np.zeros(shift_x.shape)
         shifts = np.vstack((shift_x.ravel(), shift_y.ravel(),
-                            shift_x.ravel(), shift_y.ravel(), shift_theta.ravel())).transpose()
+                            shift_zeros.ravel(), shift_zeros.ravel(), shift_zeros.ravel())).transpose()
 
         # Enumerate all shifted anchors:
         #
@@ -105,44 +105,8 @@ class ProposalLayer(caffe.Layer):
         A = self._num_anchors
         K = shifts.shape[0]
 
-        overlap_anchors = self._anchors.copy()
 
-        overlap_anchors[:,0] = self._anchors[:,0] - self._anchors[:,2]/2
-        overlap_anchors[:,1] = self._anchors[:,1] - self._anchors[:,3]/2
-        overlap_anchors[:,2] = self._anchors[:,0] + self._anchors[:,2]/2
-        overlap_anchors[:,3] = self._anchors[:,1] + self._anchors[:,3]/2
-
-        angle = self._anchors[:,4]
-        a = np.cos(angle)/2
-        b = np.sin(angle)/2
-
-        p_0_x = self._anchors[:,0] - self._anchors[:,2] * a + self._anchors[:,3] * b
-        p_0_y = self._anchors[:,1] - self._anchors[:,2] * b - self._anchors[:,3] * a
-        p_3_x = self._anchors[:,0] - self._anchors[:,2] * a - self._anchors[:,3] * b
-        p_3_y = self._anchors[:,1] - self._anchors[:,2] * b + self._anchors[:,3] * a
-
-        p_1_x = 2 * self._anchors[:,0] - p_3_x
-        p_1_y = 2 * self._anchors[:,1] - p_3_y
-        p_2_x = 2 * self._anchors[:,0] - p_0_x
-        p_2_y = 2 * self._anchors[:,1] - p_0_y
-
-        x_min = []
-        y_min = []
-        x_max = []
-        y_max = []
-        
-        for i in range(0,len(p_0_x)):
-            x_min.append(min(p_0_x[i],p_1_x[i],p_2_x[i],p_3_x[i]))
-            x_max.append(max(p_0_x[i],p_1_x[i],p_2_x[i],p_3_x[i]))
-            y_min.append(min(p_0_y[i],p_1_y[i],p_2_y[i],p_3_y[i]))
-            y_max.append(max(p_0_y[i],p_1_y[i],p_2_y[i],p_3_y[i]))
-
-        overlap_anchors[:,0] = x_min
-        overlap_anchors[:,1] = y_min
-        overlap_anchors[:,2] = x_max
-        overlap_anchors[:,3] = y_max
-
-        anchors = overlap_anchors.reshape((1, A, 5)) + \
+        anchors = self._anchors.reshape((1, A, 5)) + \
                   shifts.reshape((1, K, 5)).transpose((1, 0, 2))
         anchors = anchors.reshape((K * A, 5))
 
@@ -165,16 +129,48 @@ class ProposalLayer(caffe.Layer):
         # Convert anchors into proposals via bbox transformations
         proposals = bbox_transform_inv(anchors, bbox_deltas)
 
-        # 2. clip predicted boxes to image
-        proposals = clip_boxes(proposals, im_info[:2])
+        proposals_rect = proposals.copy()
 
-        print('clip_proposals_shape')
-        print(proposals.shape)
+        # print('clip_proposals_shape')
+        # print(proposals.shape)
+        angle = proposals[:,4]
+        a = np.cos(angle)/2
+        b = np.sin(angle)/2
+
+        p_0_x = proposals[:,0] - proposals[:,2] * a + proposals[:,3] * b
+        p_0_y = proposals[:,1] - proposals[:,2] * b - proposals[:,3] * a
+        p_3_x = proposals[:,0] - proposals[:,2] * a - proposals[:,3] * b
+        p_3_y = proposals[:,1] - proposals[:,2] * b + proposals[:,3] * a
+
+        p_1_x = 2 * proposals[:,0] - p_3_x
+        p_1_y = 2 * proposals[:,1] - p_3_y
+        p_2_x = 2 * proposals[:,0] - p_0_x
+        p_2_y = 2 * proposals[:,1] - p_0_y
+
+        x_min = []
+        y_min = []
+        x_max = []
+        y_max = []
+
+        for i in range(0,len(p_0_x)):
+            x_min.append(min(p_0_x[i],p_1_x[i],p_2_x[i],p_3_x[i]))
+            x_max.append(max(p_0_x[i],p_1_x[i],p_2_x[i],p_3_x[i]))
+            y_min.append(min(p_0_y[i],p_1_y[i],p_2_y[i],p_3_y[i]))
+            y_max.append(max(p_0_y[i],p_1_y[i],p_2_y[i],p_3_y[i]))
+
+        proposals_rect[:,0] = x_min
+        proposals_rect[:,1] = y_min
+        proposals_rect[:,2] = x_max
+        proposals_rect[:,3] = y_max
+
+        # 2. clip predicted boxes to image
+        proposals_rect = clip_boxes(proposals_rect, im_info[:2])
 
         # 3. remove predicted boxes with either height or width < threshold
         # (NOTE: convert min_size to input image scale stored in im_info[2])
-        keep = _filter_boxes(proposals, min_size * im_info[2])
+        keep = _filter_boxes(proposals_rect, min_size * im_info[2])
         proposals = proposals[keep, :]
+        proposals_rect = proposals_rect[keep, :]
         scores = scores[keep]
 
         # 4. sort all (proposal, score) pairs by score from highest to lowest
@@ -183,6 +179,7 @@ class ProposalLayer(caffe.Layer):
         if pre_nms_topN > 0:
             order = order[:pre_nms_topN]
         proposals = proposals[order, :]
+        proposals_rect = proposals_rect[order, :]
         scores = scores[order]
 
         # 6. apply nms (e.g. threshold = 0.7)
@@ -192,7 +189,7 @@ class ProposalLayer(caffe.Layer):
         # print proposals.shape
         # time.sleep(10)
 
-        keep = nms(np.hstack((proposals[:,0:4], scores)), nms_thresh)
+        keep = nms(np.hstack((proposals_rect[:,0:4], scores)), nms_thresh)
 
         if post_nms_topN > 0:
             keep = keep[:post_nms_topN]
@@ -224,5 +221,7 @@ def _filter_boxes(boxes, min_size):
     """Remove all boxes with any side smaller than min_size."""
     ws = boxes[:, 2] - boxes[:, 0] + 1
     hs = boxes[:, 3] - boxes[:, 1] + 1
+    # ws = boxes[:, 2] + 1
+    # hs = boxes[:, 3] + 1
     keep = np.where((ws >= min_size) & (hs >= min_size))[0]
     return keep

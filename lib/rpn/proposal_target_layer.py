@@ -12,6 +12,7 @@ import numpy.random as npr
 from fast_rcnn.config import cfg
 from fast_rcnn.bbox_transform import bbox_transform
 from utils.cython_bbox import bbox_overlaps
+import time
 
 DEBUG = False
 
@@ -25,22 +26,22 @@ class ProposalTargetLayer(caffe.Layer):
         layer_params = yaml.load(self.param_str_)
         self._num_classes = layer_params['num_classes']
 
-        # sampled rois (0, x1, y1, x2, y2)
-        top[0].reshape(1, 5)
+        # sampled rois (0, x, y, w, h, theta)
+        top[0].reshape(1, 6)
         # labels
         top[1].reshape(1, 1)
         # bbox_targets
-        top[2].reshape(1, self._num_classes * 4)
+        top[2].reshape(1, self._num_classes * 5)
         # bbox_inside_weights
-        top[3].reshape(1, self._num_classes * 4)
+        top[3].reshape(1, self._num_classes * 5)
         # bbox_outside_weights
-        top[4].reshape(1, self._num_classes * 4)
+        top[4].reshape(1, self._num_classes * 5)
 
     def forward(self, bottom, top):
-        # Proposal ROIs (0, x1, y1, x2, y2) coming from RPN
+        # Proposal ROIs (0, x, y, w, h, theta) coming from RPN
         # (i.e., rpn.proposal_layer.ProposalLayer), or any other source
         all_rois = bottom[0].data
-        # GT boxes (x1, y1, x2, y2, label)
+        # GT boxes (x, y, w, h, theta, label)
         # TODO(rbg): it's annoying that sometimes I have extra info before
         # and other times after box coordinates -- normalize to one format
         gt_boxes = bottom[1].data
@@ -61,6 +62,9 @@ class ProposalTargetLayer(caffe.Layer):
 
         # Sample rois with classification labels and bounding box regression
         # targets
+
+        # print 'before sample gt boxes', gt_boxes
+        # print 'before sample all rois', all_rois
         labels, rois, bbox_targets, bbox_inside_weights = _sample_rois(
             all_rois, gt_boxes, fg_rois_per_image,
             rois_per_image, self._num_classes)
@@ -117,13 +121,13 @@ def _get_bbox_regression_labels(bbox_target_data, num_classes):
     """
 
     clss = bbox_target_data[:, 0]
-    bbox_targets = np.zeros((clss.size, 4 * num_classes), dtype=np.float32)
+    bbox_targets = np.zeros((clss.size, 5 * num_classes), dtype=np.float32)
     bbox_inside_weights = np.zeros(bbox_targets.shape, dtype=np.float32)
     inds = np.where(clss > 0)[0]
     for ind in inds:
         cls = clss[ind]
-        start = 4 * cls
-        end = start + 4
+        start = 5 * cls
+        end = start + 5
         bbox_targets[ind, start:end] = bbox_target_data[ind, 1:]
         bbox_inside_weights[ind, start:end] = cfg.TRAIN.BBOX_INSIDE_WEIGHTS
     return bbox_targets, bbox_inside_weights
@@ -133,8 +137,8 @@ def _compute_targets(ex_rois, gt_rois, labels):
     """Compute bounding-box regression targets for an image."""
 
     assert ex_rois.shape[0] == gt_rois.shape[0]
-    assert ex_rois.shape[1] == 4
-    assert gt_rois.shape[1] == 4
+    assert ex_rois.shape[1] == 5
+    assert gt_rois.shape[1] == 5
 
     targets = bbox_transform(ex_rois, gt_rois)
     if cfg.TRAIN.BBOX_NORMALIZE_TARGETS_PRECOMPUTED:
@@ -149,12 +153,23 @@ def _sample_rois(all_rois, gt_boxes, fg_rois_per_image, rois_per_image, num_clas
     examples.
     """
     # overlaps: (rois x gt_boxes)
+    overlap_rois = all_rois[:,1:6]
+    overlap_gt_boxes = gt_boxes[:,:5]
+
+    # print 'before_overlap_gt_boxes', overlap_gt_boxes
+    overlap_rois = boxes_transform_to_rect(overlap_rois)
+    overlap_gt_boxes = boxes_transform_to_rect(overlap_gt_boxes)
+
+    # print 'overlap_rois',overlap_rois
+    # print 'after_overlap_gt_boxes', overlap_gt_boxes
+    # print 'gt_boxes',gt_boxes
+    # time.sleep(10)
     overlaps = bbox_overlaps(
-        np.ascontiguousarray(all_rois[:, 1:5], dtype=np.float),
-        np.ascontiguousarray(gt_boxes[:, :4], dtype=np.float))
+        np.ascontiguousarray(overlap_rois[:, :4], dtype=np.float),
+        np.ascontiguousarray(overlap_gt_boxes[:, :4], dtype=np.float))
     gt_assignment = overlaps.argmax(axis=1)
     max_overlaps = overlaps.max(axis=1)
-    labels = gt_boxes[gt_assignment, 4]
+    labels = gt_boxes[gt_assignment, 5]
 
     # Select foreground RoIs as those with >= FG_THRESH overlap
     fg_inds = np.where(max_overlaps >= cfg.TRAIN.FG_THRESH)[0]
@@ -180,14 +195,54 @@ def _sample_rois(all_rois, gt_boxes, fg_rois_per_image, rois_per_image, num_clas
     keep_inds = np.append(fg_inds, bg_inds)
     # Select sampled values from various arrays:
     labels = labels[keep_inds]
+
+    # print 'keep_inds_labels', labels
     # Clamp labels for the background RoIs to 0
     labels[fg_rois_per_this_image:] = 0
+
+    # print 'fg_labels',labels
+
     rois = all_rois[keep_inds]
 
     bbox_target_data = _compute_targets(
-        rois[:, 1:5], gt_boxes[gt_assignment[keep_inds], :4], labels)
+        rois[:, 1:6], gt_boxes[gt_assignment[keep_inds], :5], labels)
 
     bbox_targets, bbox_inside_weights = \
         _get_bbox_regression_labels(bbox_target_data, num_classes)
 
     return labels, rois, bbox_targets, bbox_inside_weights
+
+def boxes_transform_to_rect(gt_boxes):
+    overlap_gt_boxes = gt_boxes.copy()
+
+    angle = gt_boxes[:,4]
+    a = np.cos(angle)/2
+    b = np.sin(angle)/2
+
+    p_0_x = gt_boxes[:,0] - gt_boxes[:,2] * a + gt_boxes[:,3] * b
+    p_0_y = gt_boxes[:,1] - gt_boxes[:,2] * b - gt_boxes[:,3] * a
+    p_3_x = gt_boxes[:,0] - gt_boxes[:,2] * a - gt_boxes[:,3] * b
+    p_3_y = gt_boxes[:,1] - gt_boxes[:,2] * b + gt_boxes[:,3] * a
+
+    p_1_x = 2 * gt_boxes[:,0] - p_3_x
+    p_1_y = 2 * gt_boxes[:,1] - p_3_y
+    p_2_x = 2 * gt_boxes[:,0] - p_0_x
+    p_2_y = 2 * gt_boxes[:,1] - p_0_y
+
+    x_min = []
+    y_min = []
+    x_max = []
+    y_max = []
+
+    for i in range(0,len(p_0_x)):
+        x_min.append(min(p_0_x[i],p_1_x[i],p_2_x[i],p_3_x[i]))
+        x_max.append(max(p_0_x[i],p_1_x[i],p_2_x[i],p_3_x[i]))
+        y_min.append(min(p_0_y[i],p_1_y[i],p_2_y[i],p_3_y[i]))
+        y_max.append(max(p_0_y[i],p_1_y[i],p_2_y[i],p_3_y[i]))
+
+    overlap_gt_boxes[:,0] = x_min
+    overlap_gt_boxes[:,1] = y_min
+    overlap_gt_boxes[:,2] = x_max
+    overlap_gt_boxes[:,3] = y_max
+
+    return overlap_gt_boxes

@@ -136,7 +136,7 @@ class RoIDataLayer(caffe.Layer):
                 self._name_to_top_map['bbox_outside_weights'] = idx
                 idx += 1
 
-        print 'RoiDataLayer: name_to_top:', self._name_to_top_map
+        # print 'RoiDataLayer: name_to_top:', self._name_to_top_map
         assert len(top) == len(self._name_to_top_map)
 
     def forward(self, bottom, top):
@@ -149,6 +149,9 @@ class RoIDataLayer(caffe.Layer):
             top[top_ind].reshape(*(blob.shape))
             # Copy data into net's input blobs
             top[top_ind].data[...] = blob.astype(np.float32, copy=False)
+            # print blob_name
+            # print 'top_shape', blob.shape
+            # print'top_data', top[top_ind].data[...] 
 
     def backward(self, top, propagate_down, bottom):
         """This layer does not propagate gradients."""

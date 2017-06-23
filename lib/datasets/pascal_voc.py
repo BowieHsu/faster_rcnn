@@ -216,14 +216,20 @@ class pascal_voc(imdb):
             x = float(bbox.find('center_x').text) - 1
             y = float(bbox.find('center_y').text) - 1
             w = float(bbox.find('label_width').text)
-            h = float(bbox.find('label_height').text) 
-            theta = float(bbox.find('angle').text)
+            h = float(bbox.find('label_height').text)
+            theta = float(bbox.find('angle').text) * np.pi /180
+            # if theta > (135):
+            #     while(theta > (135)):
+            #         theta -= 180
+            # elif theta < (-45):
+            #     while(theta < - 45):
+            #         theta += 180
             cls = self._class_to_ind[obj.find('name').text.lower().strip()]
             boxes[ix, :] = [x, y, w, h, theta]
             gt_classes[ix] = cls
             overlaps[ix, cls] = 1.0
             #seg_areas[ix] = (x2 - x1 + 1) * (y2 - y1 + 1)
-            seg_areas[ix] = w * h 
+            seg_areas[ix] = w * h
 
         overlaps = scipy.sparse.csr_matrix(overlaps)
 

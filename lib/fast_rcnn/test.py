@@ -184,12 +184,12 @@ def im_detect(net, im, boxes=None):
         scores = net.blobs['cls_score'].data
     else:
         # use softmax estimated probabilities
-        # scores = blobs_out['cls_prob']
-        scores = net.blobs['scores'].data.copy()
+        scores = blobs_out['cls_prob']
+        # scores = net.blobs['scores'].data.copy()
 
     if cfg.TEST.BBOX_REG:
         # Apply bounding-box regression deltas
-        # box_deltas = blobs_out['bbox_pred']
+        box_deltas = blobs_out['bbox_pred']
         # rpn_box_deltas = net.blobs['rpn_bbox_pred'].data
         # rpn_cls_score = net.blobs['rpn_cls_score'].data
 
@@ -197,9 +197,10 @@ def im_detect(net, im, boxes=None):
         # print ('rpn_box_shape', rpn_box_deltas.shape)
         # print ('rpn_cls_shape', rpn_cls_score.shape)
 
-
-        # pred_boxes = bbox_transform_inv(boxes, box_deltas)
-        pred_boxes = boxes
+        print 'box_deltas', box_deltas
+        print 'boxes',boxes
+        pred_boxes = bbox_transform_inv(boxes, box_deltas)
+        # pred_boxes = boxes
         pred_boxes = clip_boxes(pred_boxes, im.shape)
 
         # print("pred_boxes")
