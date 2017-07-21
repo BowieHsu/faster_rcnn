@@ -81,8 +81,6 @@ class AnchorTargetLayer(caffe.Layer):
         height, width = bottom[0].data.shape[-2:]
         # GT boxes (x1, y1, x2, y2, label)
         gt_boxes = bottom[1].data
-
-        # print 'anchor_target_gt_boxes', gt_boxes
         # im_info
         im_info = bottom[2].data[0, :]
 
@@ -367,6 +365,11 @@ def combine_overlap_anchors_with_shifts(anchors, shifts, K, A, im_info, allowed_
     # print inds_inside
     # keep only inside anchors
     anchors = all_anchors[inds_inside, :]
+    # for i in range(len(anchors)):
+    #     if anchors[i,4] != 1.571:
+    #         print i,anchors[i,4]
+    # print 'combine overlap'
+    # time.sleep(10)
 
     return anchors, inds_inside
 

@@ -10,11 +10,13 @@ import yaml
 import numpy as np
 import numpy.random as npr
 from fast_rcnn.config import cfg
+from fast_rcnn.bbox_transform import rect_bbox_transform
 from fast_rcnn.bbox_transform import bbox_transform
 from utils.cython_bbox import bbox_overlaps
 import time
 
-DEBUG = False
+# DEBUG = False
+DEBUG = True 
 
 class ProposalTargetLayer(caffe.Layer):
     """
@@ -26,31 +28,45 @@ class ProposalTargetLayer(caffe.Layer):
         layer_params = yaml.load(self.param_str_)
         self._num_classes = layer_params['num_classes']
 
-        # sampled rois (0, x, y, w, h, theta)
+        # sampled rois (0, x1, y1, x2, y2)
         top[0].reshape(1, 6)
+
+        # rpn_box_rois
+        top[1].reshape(1, 6)
         # labels
-        top[1].reshape(1, 1)
+        top[2].reshape(1, 1)
         # bbox_targets
-        top[2].reshape(1, self._num_classes * 5)
-        # bbox_inside_weights
         top[3].reshape(1, self._num_classes * 5)
-        # bbox_outside_weights
+        # bbox_inside_weights
         top[4].reshape(1, self._num_classes * 5)
+        # bbox_outside_weights
+        top[5].reshape(1, self._num_classes * 5)
 
     def forward(self, bottom, top):
-        # Proposal ROIs (0, x, y, w, h, theta) coming from RPN
+        # Proposal ROIs (0, x1, y1, x2, y2) coming from RPN
         # (i.e., rpn.proposal_layer.ProposalLayer), or any other source
-        all_rois = bottom[0].data
-        # GT boxes (x, y, w, h, theta, label)
+        all_rect_rois = bottom[0].data
+
+        all_box_rois = bottom[1].data
+
+        # GT boxes (x1, y1, x2, y2, label)
         # TODO(rbg): it's annoying that sometimes I have extra info before
         # and other times after box coordinates -- normalize to one format
-        gt_boxes = bottom[1].data
+        gt_boxes = bottom[2].data
 
         # Include ground-truth boxes in the set of candidate rois
         zeros = np.zeros((gt_boxes.shape[0], 1), dtype=gt_boxes.dtype)
+
+        overlap_gt_boxes = boxes_transform_to_rect(gt_boxes)
+
+        # print all_rect_rois[0]
+        # print overlap_gt_boxes[0]
+        # time.sleep(10)
         all_rois = np.vstack(
-            (all_rois, np.hstack((zeros, gt_boxes[:, :-1])))
+            (all_rect_rois, np.hstack((zeros, overlap_gt_boxes[:, :-1])))
         )
+
+        all_box_rois = np.vstack((all_box_rois, np.hstack((zeros, gt_boxes[:,:-1]))))
 
         # Sanity check: single batch only
         assert np.all(all_rois[:, 0] == 0), \
@@ -62,42 +78,45 @@ class ProposalTargetLayer(caffe.Layer):
 
         # Sample rois with classification labels and bounding box regression
         # targets
-
-        # print 'before sample gt boxes', gt_boxes
-        # print 'before sample all rois', all_rois
-        labels, rois, bbox_targets, bbox_inside_weights = _sample_rois(
-            all_rois, gt_boxes, fg_rois_per_image,
+        labels, rect_rois, box_rois, bbox_targets, bbox_inside_weights = _sample_rois(
+            all_rois, all_box_rois, gt_boxes, fg_rois_per_image,
             rois_per_image, self._num_classes)
 
         if DEBUG:
+            fg_num = 0
+            bg_num = 0
             print 'num fg: {}'.format((labels > 0).sum())
             print 'num bg: {}'.format((labels == 0).sum())
-            self._count += 1
-            self._fg_num += (labels > 0).sum()
-            self._bg_num += (labels == 0).sum()
-            print 'num fg avg: {}'.format(self._fg_num / self._count)
-            print 'num bg avg: {}'.format(self._bg_num / self._count)
-            print 'ratio: {:.3f}'.format(float(self._fg_num) / float(self._bg_num))
+            fg_num += (labels > 0).sum()
+            bg_num += (labels == 0).sum()
+            # print 'num fg avg: {}'.format(fg_num / count)
+            # print 'num bg avg: {}'.format(bg_num / count)
+            print 'ratio: {:.3f}'.format(float(fg_num) / float(bg_num))
+
+        # time.sleep(10)
+        # sampled rois
+        top[0].reshape(*rect_rois.shape)
+        top[0].data[...] = rect_rois
 
         # sampled rois
-        top[0].reshape(*rois.shape)
-        top[0].data[...] = rois
+        top[1].reshape(*box_rois.shape)
+        top[1].data[...] = box_rois
 
         # classification labels
-        top[1].reshape(*labels.shape)
-        top[1].data[...] = labels
+        top[2].reshape(*labels.shape)
+        top[2].data[...] = labels
 
         # bbox_targets
-        top[2].reshape(*bbox_targets.shape)
-        top[2].data[...] = bbox_targets
+        top[3].reshape(*bbox_targets.shape)
+        top[3].data[...] = bbox_targets
 
         # bbox_inside_weights
-        top[3].reshape(*bbox_inside_weights.shape)
-        top[3].data[...] = bbox_inside_weights
+        top[4].reshape(*bbox_inside_weights.shape)
+        top[4].data[...] = bbox_inside_weights
 
         # bbox_outside_weights
-        top[4].reshape(*bbox_inside_weights.shape)
-        top[4].data[...] = np.array(bbox_inside_weights > 0).astype(np.float32)
+        top[5].reshape(*bbox_inside_weights.shape)
+        top[5].data[...] = np.array(bbox_inside_weights > 0).astype(np.float32)
 
     def backward(self, top, propagate_down, bottom):
         """This layer does not propagate gradients."""
@@ -130,6 +149,7 @@ def _get_bbox_regression_labels(bbox_target_data, num_classes):
         end = start + 5
         bbox_targets[ind, start:end] = bbox_target_data[ind, 1:]
         bbox_inside_weights[ind, start:end] = cfg.TRAIN.BBOX_INSIDE_WEIGHTS
+        # bbox_inside_weights[ind, start:end] = cfg.TRAIN.RECT_BBOX_INSIDE_WEIGHTS
     return bbox_targets, bbox_inside_weights
 
 
@@ -141,32 +161,36 @@ def _compute_targets(ex_rois, gt_rois, labels):
     assert gt_rois.shape[1] == 5
 
     targets = bbox_transform(ex_rois, gt_rois)
-    if cfg.TRAIN.BBOX_NORMALIZE_TARGETS_PRECOMPUTED:
-        # Optionally normalize targets by a precomputed mean and stdev
-        targets = ((targets - np.array(cfg.TRAIN.BBOX_NORMALIZE_MEANS))
-                / np.array(cfg.TRAIN.BBOX_NORMALIZE_STDS))
+    # targets = rect_bbox_transform(ex_rois, gt_rois)
+    # if cfg.TRAIN.BBOX_NORMALIZE_TARGETS_PRECOMPUTED:
+        # # Optionally normalize targets by a precomputed mean and stdev
+        # targets = ((targets - np.array(cfg.TRAIN.BBOX_NORMALIZE_MEANS))
+                # / np.array(cfg.TRAIN.BBOX_NORMALIZE_STDS))
     return np.hstack(
             (labels[:, np.newaxis], targets)).astype(np.float32, copy=False)
 
-def _sample_rois(all_rois, gt_boxes, fg_rois_per_image, rois_per_image, num_classes):
+def _sample_rois(all_rect_rois, all_box_rois, gt_boxes, fg_rois_per_image, rois_per_image, num_classes):
     """Generate a random sample of RoIs comprising foreground and background
     examples.
     """
     # overlaps: (rois x gt_boxes)
-    overlap_rois = all_rois[:,1:6]
-    overlap_gt_boxes = gt_boxes[:,:5]
 
-    # print 'before_overlap_gt_boxes', overlap_gt_boxes
-    overlap_rois = boxes_transform_to_rect(overlap_rois)
+    # overlap_gt_boxes = gt_boxes[:,:5]
+    overlap_rois     = all_rect_rois[:,1:6]
+    overlap_gt_boxes = gt_boxes[:,:5]
+    
+    # overlap_rois = boxes_transform_to_rect(overlap_rois)
     overlap_gt_boxes = boxes_transform_to_rect(overlap_gt_boxes)
 
     # print 'overlap_rois',overlap_rois
-    # print 'after_overlap_gt_boxes', overlap_gt_boxes
-    # print 'gt_boxes',gt_boxes
-    # time.sleep(10)
+    # print 'overlap_gt_boxes',overlap_gt_boxes
+
     overlaps = bbox_overlaps(
         np.ascontiguousarray(overlap_rois[:, :4], dtype=np.float),
         np.ascontiguousarray(overlap_gt_boxes[:, :4], dtype=np.float))
+
+    # print 'overlaps', overlaps
+
     gt_assignment = overlaps.argmax(axis=1)
     max_overlaps = overlaps.max(axis=1)
     labels = gt_boxes[gt_assignment, 5]
@@ -195,22 +219,24 @@ def _sample_rois(all_rois, gt_boxes, fg_rois_per_image, rois_per_image, num_clas
     keep_inds = np.append(fg_inds, bg_inds)
     # Select sampled values from various arrays:
     labels = labels[keep_inds]
-
-    # print 'keep_inds_labels', labels
     # Clamp labels for the background RoIs to 0
     labels[fg_rois_per_this_image:] = 0
 
-    # print 'fg_labels',labels
+    rect_rois = all_rect_rois[keep_inds]
+    box_rois = all_box_rois[keep_inds]
+    
+    # print box_rois[0]
+    # print rect_rois[0]
 
-    rois = all_rois[keep_inds]
-
+    #rewrite compute targets function
+    # print labels
     bbox_target_data = _compute_targets(
-        rois[:, 1:6], gt_boxes[gt_assignment[keep_inds], :5], labels)
+        box_rois[:, 1:6], gt_boxes[gt_assignment[keep_inds], :5], labels)
 
     bbox_targets, bbox_inside_weights = \
         _get_bbox_regression_labels(bbox_target_data, num_classes)
 
-    return labels, rois, bbox_targets, bbox_inside_weights
+    return labels, rect_rois, box_rois, bbox_targets, bbox_inside_weights
 
 def boxes_transform_to_rect(gt_boxes):
     overlap_gt_boxes = gt_boxes.copy()
@@ -235,9 +261,9 @@ def boxes_transform_to_rect(gt_boxes):
     y_max = []
 
     for i in range(0,len(p_0_x)):
-        x_min.append(min(p_0_x[i],p_1_x[i],p_2_x[i],p_3_x[i]))
+        x_min.append(max(0,min(p_0_x[i],p_1_x[i],p_2_x[i],p_3_x[i])))
         x_max.append(max(p_0_x[i],p_1_x[i],p_2_x[i],p_3_x[i]))
-        y_min.append(min(p_0_y[i],p_1_y[i],p_2_y[i],p_3_y[i]))
+        y_min.append(max(0,min(p_0_y[i],p_1_y[i],p_2_y[i],p_3_y[i])))
         y_max.append(max(p_0_y[i],p_1_y[i],p_2_y[i],p_3_y[i]))
 
     overlap_gt_boxes[:,0] = x_min

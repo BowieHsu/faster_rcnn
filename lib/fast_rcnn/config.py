@@ -84,6 +84,7 @@ __C.TRAIN.BBOX_NORMALIZE_TARGETS = True
 # __C.TRAIN.BBOX_NORMALIZE_TARGETS = False
 # Deprecated (inside weights)
 __C.TRAIN.BBOX_INSIDE_WEIGHTS = (1.0, 1.0, 1.0, 1.0, 1.0)
+__C.TRAIN.RECT_BBOX_INSIDE_WEIGHTS = (1.0, 1.0, 1.0, 1.0)
 # Normalize the targets using "precomputed" (or made up) means and stdevs
 # (BBOX_NORMALIZE_TARGETS must also be True)
 __C.TRAIN.BBOX_NORMALIZE_TARGETS_PRECOMPUTED = False
@@ -96,7 +97,8 @@ __C.TRAIN.PROPOSAL_METHOD = 'selective_search'
 # Make minibatches from images that have similar aspect ratios (i.e. both
 # tall and thin or both short and wide) in order to avoid wasting computation
 # on zero-padding.
-__C.TRAIN.ASPECT_GROUPING = True
+# __C.TRAIN.ASPECT_GROUPING = True
+__C.TRAIN.ASPECT_GROUPING = False 
 
 # Use RPN to detect objects
 __C.TRAIN.HAS_RPN = False

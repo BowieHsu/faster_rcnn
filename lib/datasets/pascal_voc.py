@@ -28,7 +28,7 @@ class pascal_voc(imdb):
                             else devkit_path
         self._data_path = os.path.join(self._devkit_path, 'VOC' + self._year)
         self._classes = ('__background__', # always index 0
-                        'gongjian')
+                        'text')
         # self._classes = ('__background__', # always index 0
                          # 'aeroplane', 'bicycle', 'bird', 'boat',
                          # 'bottle', 'bus', 'car', 'cat', 'chair',
@@ -217,7 +217,7 @@ class pascal_voc(imdb):
             y = float(bbox.find('center_y').text) - 1
             w = float(bbox.find('label_width').text)
             h = float(bbox.find('label_height').text)
-            theta = float(bbox.find('angle').text) * np.pi /180
+            theta = float(bbox.find('angle').text)
             # if theta > (135):
             #     while(theta > (135)):
             #         theta -= 180

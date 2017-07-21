@@ -171,19 +171,18 @@ def im_detect(net, im, boxes=None):
 
     if cfg.TEST.HAS_RPN:
         assert len(im_scales) == 1, "Only single-image batch implemented"
-        # rois = net.blobs['box_rois'].data.copy()
-        rois = net.blobs['rect_rois'].data.copy()
         box_rois = net.blobs['box_rois'].data.copy()
+        rect_rois = net.blobs['rect_rois'].data.copy()
 
         # unscale back to raw image space
         # boxes = rois[:,1:5]/im_scales[0]
-        # boxes = rois[:, 1:6]
-        boxes = rois[:, 1:5]
-        box_boxes = box_rois[:, 1:6]
+        box_boxes  = box_rois[:, 1:6]
+        rect_boxes = rect_rois[:, 1:6]
+        # boxes = rois[:, 1:5]
 
         # boxes = rois[:, 0:4]
-        boxes[:,0:4] = boxes[:, 0:4] / im_scales[0]
-        box_boxes[:,0:4] = box_boxes[:, 0:4] / im_scales[0]
+        box_boxes[:,0:4]  = box_boxes[:, 0:4] / im_scales[0]
+        rect_boxes[:,0:4] = rect_boxes[:, 0:4] / im_scales[0]
 
     if cfg.TEST.SVM:
         # use the raw scores before softmax under the assumption they
@@ -191,40 +190,36 @@ def im_detect(net, im, boxes=None):
         scores = net.blobs['cls_score'].data
     else:
         # use softmax estimated probabilities
-        # scores = blobs_out['cls_prob']
-        scores = net.blobs['scores'].data.copy()
+        scores = blobs_out['cls_prob']
+        # scores = net.blobs['scores'].data.copy()
 
     if cfg.TEST.BBOX_REG:
         # Apply bounding-box regression deltas
-        # box_deltas = blobs_out['bbox_pred']
-        # rpn_box_deltas = net.blobs['rpn_bbox_pred'].data
-        # rpn_cls_score = net.blobs['rpn_cls_score'].data
+        box_deltas = blobs_out['bbox_pred']
+    
+        # print 'boxes_shape', boxes.shape
+        # print 'delta_shape', box_deltas.shape
+        pred_boxes = bbox_transform_inv(box_boxes, box_deltas)
+        pred_rect  = bbox_transform_inv(rect_boxes, box_deltas) 
+        # pred_boxes = boxes
+        # pred_boxes = clip_boxes(pred_boxes, im.shape)
 
-        # print ('box_shape',box_deltas.shape)
-        # print ('rpn_box_shape', rpn_box_deltas.shape)
-        # print ('rpn_cls_shape', rpn_cls_score.shape)
-
-
-        # pred_boxes = bbox_transform_inv(boxes, box_deltas)
-        pred_boxes = boxes
-        pred_boxes = clip_boxes(pred_boxes, im.shape)
-
-        pred_box_boxes = box_boxes
-        pred_box_boxes = clip_boxes(pred_box_boxes, im.shape)
         # print("pred_boxes")
         # print(pred_boxes)
     else:
         # Simply repeat the boxes, once for each class
-        pred_boxes = np.tile(boxes, (1, scores.shape[1]))
-        pred_box_boxes = np.tile(box_boxes, (1, scores.shape[1]))
+        pred_boxes = np.tile(box_boxes, (1, scores.shape[1]))
+        pred_rect = np.tile(rect_boxes, (1, scores.shape[1]))
 
     if cfg.DEDUP_BOXES > 0 and not cfg.TEST.HAS_RPN:
         # Map scores and predictions back to the original set of boxes
         scores = scores[inv_index, :]
         pred_boxes = pred_boxes[inv_index, :]
-        pred_box_boxes = box_boxes[inv_index, :]
-
-    return scores, pred_boxes, pred_box_boxes
+        pred_rect  = pred_rect[inv_index, :]
+    
+    print 'rcnn_test_output'
+    print pred_rect.shape,pred_boxes.shape
+    return scores, pred_rect, pred_boxes
 
 def vis_detections(im, class_name, dets, thresh=0.3):
     """Visual debugging of detections."""

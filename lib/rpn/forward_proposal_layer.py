@@ -15,8 +15,8 @@ from fast_rcnn.nms_wrapper import nms
 import cv2
 import time
 
-DEBUG = False
-# DEBUG = True
+# DEBUG = False
+DEBUG = True
 
 class ProposalLayer(caffe.Layer):
     """
@@ -40,15 +40,12 @@ class ProposalLayer(caffe.Layer):
 
         # rois blob: holds R regions of interest, each is a 5-tuple
         # (n, x1, y1, x2, y2) specifying an image batch index n and a
-        # rectangle (x1, y1, x2, y2, 0)
+        # rectangle (x1, y1, x2, y2)
         top[0].reshape(1, 5)
-        top[1].reshape(1, 5)
 
         # scores blob: holds scores for R regions of interest
-        if len(top) > 2:
-            top[2].reshape(1, 1, 1, 1)
-            # box (x y w h theta)
-
+        if len(top) > 1:
+            top[1].reshape(1, 1, 1, 1)
 
     def forward(self, bottom, top):
         # Algorithm:
@@ -198,32 +195,25 @@ class ProposalLayer(caffe.Layer):
             keep = keep[:post_nms_topN]
         proposals = proposals[keep, :]
         proposals_rect = proposals_rect[keep,:]
+        proposals_rect = proposals_rect[:,:4]
         scores = scores[keep]
 
-        # proposals_rect = proposals_rect[:,:4]
         # print 'proposal_shape',proposals[0,:]
         # print 'rect_shape', proposals_rect[0,:]
         # Output rois blob
         # Our RPN implementation only supports a single input image, so all
         # batch inds are 0
-
-        # print 'proposal',proposals[0]
-        # print 'proposal_rect', proposals_rect[0]
         batch_inds = np.zeros((proposals.shape[0], 1), dtype=np.float32)
-        box_blob = np.hstack((batch_inds, proposals.astype(np.float32, copy=False)))
-
-        rect_blob = np.hstack((batch_inds, proposals_rect.astype(np.float32, copy=False)))
-
-        top[0].reshape(*(rect_blob.shape))
-        top[0].data[...] = rect_blob
-
-        top[1].reshape(*(box_blob.shape))
-        top[1].data[...] = box_blob
+        # blob = np.hstack((batch_inds, proposals.astype(np.float32, copy=False)))
+        blob = np.hstack((batch_inds, proposals_rect.astype(np.float32, copy=False)))
+        print 'blob shape', blob.shape
+        top[0].reshape(*(blob.shape))
+        top[0].data[...] = blob
 
         # [Optional] output scores blob
-        if len(top) > 2:
-            top[2].reshape(*(scores.shape))
-            top[2].data[...] = scores
+        if len(top) > 1:
+            top[1].reshape(*(scores.shape))
+            top[1].data[...] = scores
 
     def backward(self, top, propagate_down, bottom):
         """This layer does not propagate gradients."""
